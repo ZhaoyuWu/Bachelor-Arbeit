@@ -67,7 +67,7 @@ axs[1].set_ylabel('Reward')
 axs[1].legend()
 axs[1].grid(True)
 
-plt.tight_layout()  
+plt.tight_layout()
 
 plt.show()
 

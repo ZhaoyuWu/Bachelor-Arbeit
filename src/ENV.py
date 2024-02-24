@@ -17,8 +17,8 @@ class PathEnvironment(gym.Env):
 
         # Initializing
         self.state = np.zeros((3, 5))                                        # Zero Matrix
-        self.avg_width = 9                                                   # Set the initial path width
-        self.width_change_influence_prob = 0.8                               # width change influence probability
+        self.avg_width = 5                                                   # Set the initial path width
+        self.width_change_influence_prob = 0.6                               # width change influence probability
 
 
         self.stroke_direction = random.uniform(0, 2 * np.pi)              # Stroke start with pointing in a random direction
@@ -41,8 +41,22 @@ class PathEnvironment(gym.Env):
     def step(self, action):
         # Change of width: new width = old width + action
         width_change = action
-        self.avg_width += width_change
+        self.avg_width += action
+
+
+        # 应用Sigmoid函数
+        sigmoid_width = 1 / (1 + np.exp(-self.avg_width + 3))
+
+        # 将Sigmoid的输出从(0,1)映射到(1,5)
+        mapped_width = sigmoid_width * 4 + 1  # 现在映射范围是1到5
+
+        # 更新avg_width
+        self.avg_width = mapped_width
+
         new_width = self.avg_width
+
+
+        # print("Width: ",self.avg_width)
 
         new_state = np.zeros((3, 5))
 
@@ -67,21 +81,36 @@ class PathEnvironment(gym.Env):
             stroke_direction = np.array([np.cos(self.stroke_direction), np.sin(self.stroke_direction)])
             stroke_point = self.prev_stroke_point + stroke_direction * stroke_step_size
 
+            distance = np.linalg.norm(path_center - stroke_point)
+
+
+
             if np.random.rand() < self.width_change_influence_prob:
-                # If the width decreases, increase the probability or magnitude that the handwriting points are closer to the path's central axis
-                if width_change < 0:
-                    adjustment_factor = -width_change * 0.1                                               # positive affected by the width decrease
-                    stroke_point += (path_center - stroke_point) * adjustment_factor
+                # User affected when out of scope(threshold)
+                if ((new_width / 2) * 0.8 < distance):
+                    # If the width decreases, increase the probability or magnitude that the handwriting points are closer to the path's central axis
+                    if width_change < 0:
+                        adjustment_factor = -width_change * 0.05                                               # positive affected by the width decrease
+                        stroke_point += (path_center - stroke_point) * adjustment_factor
+                    else:
+                        adjustment_factor = -width_change * 0.01                                              # positive affected by the width increase
+                        stroke_point += (path_center - stroke_point) * adjustment_factor
+                # User affected when in scope(threshold)
                 else:
-                    adjustment_factor = -width_change * 0.05                                              # positive affected by the width increase
-                    stroke_point += (path_center - stroke_point) * adjustment_factor
+                    if width_change < 0:
+                        adjustment_factor = -width_change * 0.05                                               # positive affected by the width decrease
+                        stroke_point += (path_center - stroke_point) * adjustment_factor
+                    else:
+                        adjustment_factor = -width_change * 0.002                                              # positive affected by the width increase
+                        stroke_point += (path_center - stroke_point) * adjustment_factor
             else:
                 if width_change < 0:
-                    adjustment_factor = -width_change * 0.2                                               # nagetive affected by the width decrease
+                    adjustment_factor = -width_change * 0.06                                               # nagetive affected by the width decrease
                     stroke_point -= (path_center - stroke_point) * adjustment_factor
                 else:
-                    adjustment_factor = -width_change * 0.3                                               # nagetive affected by the width increase
+                    adjustment_factor = -width_change * 0.12                                               # nagetive affected by the width increase
                     stroke_point -= (path_center - stroke_point) * adjustment_factor
+
 
             # New states
             new_state[i, :2] = stroke_point
@@ -98,11 +127,12 @@ class PathEnvironment(gym.Env):
         reward = self.calculate_reward(self.state)
         done = False
         info = {}
-
+        # print("selfstat: ",self.state)
         return self.state, reward, done, info
 
     def calculate_reward(self, state):
         # last 10 points are concerned
+        # print("rewardstate: ",state)
         N = min(10, state.shape[0])
         stroke_points = state[-N:, 0:2]
         path_centers = state[-N:, 2:4]
@@ -115,17 +145,24 @@ class PathEnvironment(gym.Env):
 
         # width is averange of the last 10 widths
         width = np.mean(state[-N:, 4])
+        print("Width: ",width)
         epsilon = 0.001
 
         # Smaller width, larger reward
         reward_width = np.log((1 / (width + epsilon)) + 1)
 
-        # weight of width and DTW distance
-        w_width = 0.1
-        w_dtw_distance = 0.9
+        # If width >= distance
+        if(reward_width >= reward_dtw_distance):
+            # weight of width and DTW distance
+            w_width = 0.9
+            w_dtw_distance = 0.1
+        # If width < distance
+        else:
+            w_width = 0.3
+            w_dtw_distance = 0.7
 
         total_reward = w_width * reward_width + w_dtw_distance * reward_dtw_distance
-
+        print("Width reward: ",w_width * reward_width, "\nDistance reward: ",w_dtw_distance * reward_dtw_distance)
         return total_reward
 
 

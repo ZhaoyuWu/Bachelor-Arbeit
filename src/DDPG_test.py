@@ -35,7 +35,6 @@ import gym
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-from ENV import PathEnvironment
 
 import tensorlayer as tl
 
@@ -56,10 +55,10 @@ TAU = 0.01  # soft replacement
 MEMORY_CAPACITY = 10000  # size of replay buffer
 BATCH_SIZE = 32  # update batchsize
 
-MAX_EPISODES = 30  # total number of episodes for training
-MAX_EP_STEPS = 10  # total number of steps for each episode
+MAX_EPISODES = 100  # total number of episodes for training
+MAX_EP_STEPS = 100  # total number of steps for each episode
 TEST_PER_EPISODES = 10  # test the model per episodes
-VAR = 0.4  # control exploration
+VAR = 3  # control exploration
 
 
 ###############################  DDPG  ####################################
@@ -83,7 +82,7 @@ class DDPG(object):
         def get_actor(input_state_shape, name=''):
             """
             Build actor network
-            :param input_state_shape: state shape, e.g., [None, 3, 5]
+            :param input_state_shape: state
             :param name: name
             :return: act
             """
@@ -107,7 +106,6 @@ class DDPG(object):
             x = tl.layers.Concat(1)([s, a])
             x = tl.layers.Dense(n_units=60, act=tf.nn.relu, W_init=W_init, b_init=b_init, name='C_l1')(x)
             x = tl.layers.Dense(n_units=1, W_init=W_init, b_init=b_init, name='C_out')(x)
-            print("Q: ",x)
             return tl.models.Model(inputs=[s, a], outputs=x, name='Critic' + name)
 
         self.actor = get_actor([None, s_dim])
@@ -158,14 +156,10 @@ class DDPG(object):
     def choose_action(self, s):
         """
         Choose action
-        :param s: state, assumed to be a numpy array of shape (3, 5).
-        :return: action
+        :param s: state
+        :return: act
         """
-        # 正确地展平状态s为形状为[1, 15]的二维数组
-        s_flattened = s.flatten().reshape(1, -1)  # 使用-1让numpy自动计算正确的列数
-        # 使用处理后的状态作为输入，调用模型预测动作
-        action = self.actor(s_flattened.astype(np.float32))[0]
-        return action
+        return self.actor(np.array([s], dtype=np.float32))[0]
 
     def learn(self):
         """
@@ -187,7 +181,6 @@ class DDPG(object):
             q_ = self.critic_target([bs_, a_])
             y = br + GAMMA * q_
             q = self.critic([bs, ba])
-            print("Q: ",q)
             td_error = tf.losses.mean_squared_error(y, q)
         c_grads = tape.gradient(td_error, self.critic.trainable_weights)
         self.critic_opt.apply_gradients(zip(c_grads, self.critic.trainable_weights))
@@ -214,10 +207,8 @@ class DDPG(object):
         :return: None
         """
         # 整理s，s_,方便直接输入网络计算
-        # s = s.astype(np.float32)
-        # s_ = s_.astype(np.float32)
-        s = s.flatten()
-        s_ = s_.flatten()
+        s = s.astype(np.float32)
+        s_ = s_.astype(np.float32)
 
         # 把s, a, [r], s_横向堆叠
         transition = np.hstack((s, a, [r], s_))
@@ -257,8 +248,7 @@ class DDPG(object):
 if __name__ == '__main__':
 
     # 初始化环境
-    # env = gym.make(ENV_NAME)
-    env = PathEnvironment()
+    env = gym.make(ENV_NAME)
     env = env.unwrapped
 
     # reproducible，设置随机种子，为了能够重现
@@ -267,9 +257,7 @@ if __name__ == '__main__':
     tf.random.set_seed(RANDOMSEED)
 
     # 定义状态空间，动作空间，动作幅度范围
-    # s_dim = env.observation_space.shape[0]
-    state_shape = env.observation_space.shape  # 获取状态空间的形状，假设结果是(3, 5)
-    s_dim = np.prod(state_shape)
+    s_dim = env.observation_space.shape[0]
     a_dim = env.action_space.shape[0]
     a_bound = env.action_space.high
 
@@ -284,66 +272,32 @@ if __name__ == '__main__':
 
         reward_buffer = []  # 用于记录每个EP的reward，统计变化
         t0 = time.time()  # 统计时间
-
-        # 初始化图像显示
-        plt.ion()
-        fig, axs = plt.subplots(3, 1, figsize=(10, 12))  # 创建三个子图
-
-        reward_history = []  # 用于存储每个回合的累积reward
-        width_history = []  # 用于记录每个EP的宽度变化
-
-
         for i in range(MAX_EPISODES):
             t1 = time.time()
-            s = env.reset()
+            s = env.reset()[0]
             ep_reward = 0  # 记录当前EP的reward
-
             for j in range(MAX_EP_STEPS):
                 # Add exploration noise
                 a = ddpg.choose_action(s)  # 这里很简单，直接用actor估算出a动作
-                # print("DDPG Action: ", a)
+
                 # 为了能保持开发，这里用了另外一种方式增加探索。
                 # 因此需要需要以a为均值，VAR为标准差，建立正态分布，再从正态分布采样出a
                 # 因为a是均值，所以a的概率是最大的。但a相对其他概率由多大，是靠VAR调整。这里我们其实可以增加更新VAR，动态调整a的确定性
                 # 然后进行裁剪
-                # 或者任何合适的衰减因子
-                print("DDGP Action",a)
-                a = np.clip(np.random.normal(a, VAR), -3, 1)
+                a = np.clip(np.random.normal(a, VAR), -2, 2)
                 # 与环境进行互动
-                # print(env.step(a))
-                s_, r, done, info = env.step(a)
+                s_, r, done, info = env.step(a)[:-1]
 
                 # 保存s，a，r，s_
-                # print("state: ",s, "\naction: ",a,"\nrewards: ",r,"\nlast state: ",s_)
-                # print("Action: ",a, "Reward: ", r)
                 ddpg.store_transition(s, a, r / 10, s_)
-
-                width_history.append(env.avg_width)  # 假设环境中有一个属性 avg_width 记录当前的宽度
 
                 # 第一次数据满了，就可以开始学习
                 if ddpg.pointer > MEMORY_CAPACITY:
                     ddpg.learn()
 
-                # 提取笔迹点和路径中心点
-                stroke_points = s_[:, :2]
-                path_centers = s_[:, 2:4]
-
-                axs[0].plot(stroke_points[:, 0], stroke_points[:, 1],'r-')
-                axs[0].plot(path_centers[:, 0], path_centers[:, 1],'b-')
-
-                # axs[0].legend()
-                # axs[0].set_xlabel('X Coordinate')
-                # axs[0].set_ylabel('Y Coordinate')
-
-                # 强制绘图更新
-                plt.pause(0.1)
-
-                if done:
-                    break
-
                 # 输出数据记录
                 s = s_
-                ep_reward += r  # total reward
+                ep_reward += r  # 记录当前EP的总reward
                 if j == MAX_EP_STEPS - 1:
                     print(
                         '\rEpisode: {}/{}  | Episode Reward: {:.4f}  | Running Time: {:.4f}'.format(
@@ -353,34 +307,16 @@ if __name__ == '__main__':
                     )
 
                 plt.show()
-            # 每个回合结束后，更新reward历史
-            reward_history.append(ep_reward)
-
-            # 更新reward图表
-            axs[1].clear()
-            axs[1].plot(reward_history, label='Reward')
-            axs[1].set_xlabel('Episode')
-            axs[1].set_ylabel('Cumulative Reward')
-            axs[1].legend()
-
-            # 更新width图表为连续线条
-            axs[2].clear()
-            axs[2].plot(width_history, label='Width')
-            axs[2].set_xlabel('Step')
-            axs[2].set_ylabel('Width')
-            axs[2].legend()
-
-            plt.pause(0.01)  # 短暂暂停以更新图表
 
             # test
             if i and not i % TEST_PER_EPISODES:
                 t1 = time.time()
-                s = env.reset()
+                s = env.reset()[0]
                 ep_reward = 0
                 for j in range(MAX_EP_STEPS):
 
                     a = ddpg.choose_action(s)  # 注意，在测试的时候，我们就不需要用正态分布了，直接一个a就可以了。
-                    s_, r, done, info = env.step(a)
+                    s_, r, done, info = env.step(a)[:-1]
 
                     s = s_
                     ep_reward += r
@@ -393,56 +329,31 @@ if __name__ == '__main__':
                         )
 
                         reward_buffer.append(ep_reward)
+                        print(reward_buffer)
 
-            # print("EPR: ",reward_buffer)
-
+            if reward_buffer:
+                plt.ion()
+                plt.cla()
+                plt.title('DDPG')
+                plt.plot(np.array(range(len(reward_buffer))) * TEST_PER_EPISODES, reward_buffer)  # plot the episode vt
+                plt.xlabel('episode steps')
+                plt.ylabel('normalized state-action value')
+                plt.ylim(-2000, 0)
+                plt.show()
+                plt.pause(0.1)
+        plt.ioff()
+        plt.show()
         print('\nRunning time: ', time.time() - t0)
         ddpg.save_ckpt()
-    plt.show(block=True)
 
-    # 假设ddpg和env已经被正确初始化和加载
-    env = PathEnvironment()
+    # test
+    env = gym.make(ENV_NAME, render_mode="human")
     ddpg.load_ckpt()
-
-    # 准备动态绘图
-    plt.ion()  # 开启interactive mode
-    fig, axs = plt.subplots(2, 1, figsize=(10, 10))  # 创建两个子图
-
-    actions = []  # 存储动作值
-    widths = []  # 存储宽度值，这里暂时用动作值代替宽度值
-    steps = []  # 存储每一步
-
-    s = env.reset()
-
-    for i in range(100):  # 控制测试的次数
-        action = ddpg.choose_action(s)
-        actions.append(action[0])  # 记录动作值
-        widths.append(env.avg_width)  # 假设宽度是基于动作值和随机因素计算得到的
-        steps.append(i)  # 记录步数
-
-        s, r, done, info = env.step(action)
-
-        # 更新动作变化子图
-        axs[0].clear()  # 清除之前的绘图
-        axs[0].plot(steps, actions, label='Action')
-        axs[0].set_xlabel('Step')
-        axs[0].set_ylabel('Action')
-        axs[0].set_title('Action Changes')
-        axs[0].legend()
-
-        # 更新宽度变化子图
-        axs[1].clear()  # 清除之前的绘图
-        axs[1].plot(steps, widths, label='Width', color='red')
-        axs[1].set_xlabel('Step')
-        axs[1].set_ylabel('Width')
-        axs[1].set_title('Width Changes')
-        axs[1].legend()
-
-        plt.pause(0.1)  # 暂停一会儿等待图表更新
-
-        if done:
-            break
-
-    # 演示结束后保持图表
-    plt.ioff()  # 关闭interactive mode
-    plt.show()
+    while True:
+        s = env.reset()[0]
+        for i in range(MAX_EP_STEPS):
+            env.render()
+            # print(env.step(ddpg.choose_action(s)))
+            s, r, done, info = env.step(ddpg.choose_action(s))[:-1]
+            if done:
+                break
