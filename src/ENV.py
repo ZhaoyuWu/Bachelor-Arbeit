@@ -18,8 +18,52 @@ class PathEnvironment(gym.Env):
         # Initializing
         self.state = np.zeros((3, 5))                                        # Zero Matrix
         self.avg_width = 5                                                   # Set the initial path width
-        self.width_change_influence_prob = 0.6                               # width change influence probability
 
+        # Chang Factors ================================================================================================
+
+        # Logic:
+        #
+        #                                                     - in scope (divergent)
+        #                                   - width increased
+        #                                                     - out of scope (convergent)
+        #
+        #                - user affected
+        #
+        #
+        # Width changes                                       - in scope (convergent)
+        #                                   - width decreased
+        #                                                     - out of scope (convergent)
+        #
+        #                - user unaffected (+-jitter)
+
+        # Width change influence factor
+
+        self.width_decrease_influence_prob = 0.6
+        # self.width_decrease_influence_prob = |convergent_points| / |total_points| (when width decreases)
+
+        self.width_increase_influence_prob = 0.5
+        # self.width_increase_influence_prob = |convergent_points| / |total_points| (when width increases)
+
+        # Jitter factor
+
+        self.jitter_factor = 0.25
+        # self.jitter_factor = mean(get_increment(divergent_points))
+
+        # Width change factors
+
+        self.increase_factor_in = 0.2
+        # Width increase factor in scope = mean(get_stroke_change(in_points)) (when width increases)
+
+        self.increase_factor_out = -0.05
+        # Width increase factor out of scope = mean(get_stroke_change(out_points)) (when width increases)
+
+        self.decrease_factor_in = -0.1
+        # Width decrease factor in scope = mean(get_stroke_change(in_points)) (when width decreases)
+
+        self.decrease_factor_out = -0.05
+        # Width decrease factor in scope = mean(get_stroke_change(in_points)) (when width decreases)
+
+        # ==============================================================================================================
 
         self.stroke_direction = random.uniform(0, 2 * np.pi)              # Stroke start with pointing in a random direction
         self.path_direction = random.uniform(0, 2 * np.pi)                # Path start with pointing in a random direction
@@ -41,6 +85,7 @@ class PathEnvironment(gym.Env):
     def step(self, action):
         # Change of width: new width = old width + action
         width_change = action
+        old_width = self.avg_width
         self.avg_width += action
 
 
@@ -82,34 +127,46 @@ class PathEnvironment(gym.Env):
             stroke_point = self.prev_stroke_point + stroke_direction * stroke_step_size
 
             distance = np.linalg.norm(path_center - stroke_point)
+            print("Distance: ",distance)
 
-
-
-            if np.random.rand() < self.width_change_influence_prob:
-                # User affected when out of scope(threshold)
-                if ((new_width / 2) * 0.8 < distance):
-                    # If the width decreases, increase the probability or magnitude that the handwriting points are closer to the path's central axis
-                    if width_change < 0:
-                        adjustment_factor = -width_change * 0.05                                               # positive affected by the width decrease
+            # Width decreases
+            if width_change < 0:
+                if np.random.rand() < self.width_decrease_influence_prob:
+                    # User affected when out of scope(threshold)
+                    if ((old_width / 2) * 1.2 < distance):
+                        adjustment_factor = width_change * self.decrease_factor_out                              # positive affected by the width decrease
                         stroke_point += (path_center - stroke_point) * adjustment_factor
+                    # User affected when in scope(threshold)
                     else:
-                        adjustment_factor = -width_change * 0.01                                              # positive affected by the width increase
+                        adjustment_factor = width_change * self.decrease_factor_in                               # positive affected by the width decrease
                         stroke_point += (path_center - stroke_point) * adjustment_factor
-                # User affected when in scope(threshold)
                 else:
-                    if width_change < 0:
-                        adjustment_factor = -width_change * 0.05                                               # positive affected by the width decrease
+                    if (distance <= 5):  # Overflow prevention
+                        jitter = np.random.uniform(0, self.jitter_factor)
+                        adjustment_factor = width_change * jitter  # Jitter
                         stroke_point += (path_center - stroke_point) * adjustment_factor
                     else:
-                        adjustment_factor = -width_change * 0.002                                              # positive affected by the width increase
+                        adjustment_factor = width_change * -0.1  # Jitter
                         stroke_point += (path_center - stroke_point) * adjustment_factor
+            # Width increases
             else:
-                if width_change < 0:
-                    adjustment_factor = -width_change * 0.06                                               # nagetive affected by the width decrease
-                    stroke_point -= (path_center - stroke_point) * adjustment_factor
+                if np.random.rand() < self.width_increase_influence_prob:
+                    # User affected when out of scope (large)
+                    if ((old_width / 2) * 1.5 < distance):
+                        adjustment_factor = width_change * self.increase_factor_out                              # positive affected by the width increase
+                        stroke_point += (path_center - stroke_point) * adjustment_factor
+                        # User affected when in scope(small)
+                    if ((old_width / 2) > distance):
+                        adjustment_factor = width_change * self.increase_factor_in                               # negative affected by the width increase
+                        stroke_point += (path_center - stroke_point) * adjustment_factor
                 else:
-                    adjustment_factor = -width_change * 0.12                                               # nagetive affected by the width increase
-                    stroke_point -= (path_center - stroke_point) * adjustment_factor
+                    if(distance <= 5):                                                                           # Overflow prevention
+                        jitter = np.random.uniform(0, self.jitter_factor)
+                        adjustment_factor = width_change * jitter                                                # Jitter
+                        stroke_point += (path_center - stroke_point) * adjustment_factor
+                    else:
+                        adjustment_factor = width_change * -0.1  # Jitter
+                        stroke_point += (path_center - stroke_point) * adjustment_factor
 
 
             # New states
@@ -152,10 +209,10 @@ class PathEnvironment(gym.Env):
         reward_width = np.log((1 / (width + epsilon)) + 1)
 
         # If width >= distance
-        if(reward_width >= reward_dtw_distance):
+        if(width >= dtw_distance+1.5):
             # weight of width and DTW distance
-            w_width = 0.9
-            w_dtw_distance = 0.1
+            w_width = 0.8
+            w_dtw_distance = 0.2
         # If width < distance
         else:
             w_width = 0.3
