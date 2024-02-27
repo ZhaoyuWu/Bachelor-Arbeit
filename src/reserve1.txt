@@ -1,0 +1,72 @@
+import React, { Component } from 'react';
+
+class SmoothPathCanvas extends Component {
+  componentDidMount() {
+    this.drawSmoothPath();
+  }
+
+  drawSmoothPath() {
+    const canvas = this.refs.canvas;
+    if (canvas.getContext) {
+      const ctx = canvas.getContext('2d');
+
+      // 设置画布大小
+      canvas.width = 800;
+      canvas.height = 600;
+
+      const dpi = window.devicePixelRatio || 1;
+      const cmToPixels = (cm) => cm * (96 / 2.54) * dpi; // 厘米转像素
+
+      // 路径节点数组
+      let nodes = [{ x: 50, y: 300, width: cmToPixels(1) }]; // 初始节点
+      // 生成后续节点
+      for (let i = 1; i <= 20; i++) {
+        nodes.push({
+          x: nodes[i - 1].x + 50 + Math.random() * 50,
+          y: nodes[i - 1].y + (Math.random() - 0.5) * 100,
+          width: cmToPixels(0.5 + Math.random() * 1.5) // 随机宽度0.5到2厘米
+        });
+      }
+
+      // 绘制路径
+      for (let i = 1; i < nodes.length; i++) {
+        ctx.beginPath();
+        // 设置路径宽度为前后节点宽度的平均值
+        ctx.lineWidth = (nodes[i - 1].width + nodes[i].width) / 2;
+        // 设置线帽样式为圆形，使得路径连接更平滑
+        ctx.lineCap = 'round';
+        // 设置路径颜色
+        ctx.strokeStyle = 'black';
+
+        // 从上一个节点到当前节点之间绘制曲线
+        let cp = {
+          x: (nodes[i - 1].x + nodes[i].x) / 2,
+          y: (nodes[i - 1].y + nodes[i].y) / 2
+        };
+        ctx.moveTo(nodes[i - 1].x, nodes[i - 1].y);
+        ctx.quadraticCurveTo(nodes[i - 1].x, nodes[i - 1].y, cp.x, cp.y);
+        ctx.stroke();
+
+        // 当前节点到下一个节点之间绘制曲线
+        if (i < nodes.length - 1) {
+          let nextCp = {
+            x: (nodes[i].x + nodes[i + 1].x) / 2,
+            y: (nodes[i].y + nodes[i + 1].y) / 2
+          };
+          ctx.quadraticCurveTo(nodes[i].x, nodes[i].y, nextCp.x, nextCp.y);
+          ctx.stroke();
+        }
+      }
+    }
+  }
+
+  render() {
+    return (
+      <div>
+        <canvas ref="canvas" />
+      </div>
+    );
+  }
+}
+
+export default SmoothPathCanvas;
