@@ -17,7 +17,7 @@ class PathEnvironment(gym.Env):
 
         # Initializing
         self.state = np.zeros((3, 5))                                        # Zero Matrix
-        self.avg_width = 5                                                   # Set the initial path width
+        self.avg_width = 3                                                   # Set the initial path width
 
         # Chang Factors ================================================================================================
 
@@ -46,7 +46,7 @@ class PathEnvironment(gym.Env):
 
         # Jitter factor
 
-        self.jitter_factor = 0.25
+        self.jitter_factor = 0.15
         # self.jitter_factor = mean(get_increment(divergent_points))
 
         # Width change factors
@@ -66,7 +66,7 @@ class PathEnvironment(gym.Env):
         # ==============================================================================================================
 
         self.stroke_direction = random.uniform(0, 2 * np.pi)              # Stroke start with pointing in a random direction
-        self.path_direction = random.uniform(0, 2 * np.pi)                # Path start with pointing in a random direction
+        self.path_direction = self.stroke_direction # random.uniform(0, 2 * np.pi)                # Path start with pointing in a random direction
 
         # Randomize the start of the stroke around the start of the path.
         radius = np.random.rand() * (self.avg_width / 2)
@@ -85,20 +85,23 @@ class PathEnvironment(gym.Env):
     def step(self, action):
         # Change of width: new width = old width + action
         width_change = action
+
+        print("Action: ", action)
+
         old_width = self.avg_width
         self.avg_width += action
 
+        # Sigmoid
+        sigmoid_width = (self.avg_width - 1.5) * 2 / 5
 
-        # 应用Sigmoid函数
-        sigmoid_width = 1 / (1 + np.exp(-self.avg_width + 3))
+        sigmoid_width = 1 / (1 + np.exp(-sigmoid_width))
 
-        # 将Sigmoid的输出从(0,1)映射到(1,5)
-        mapped_width = sigmoid_width * 4 + 1  # 现在映射范围是1到5
+        # Map (0,1) to (0.1,3)
+        mapped_width = sigmoid_width * 3 + 0.1
 
-        # 更新avg_width
         self.avg_width = mapped_width
 
-        new_width = self.avg_width
+        new_width = max(self.avg_width, 0.1)
 
 
         # print("Width: ",self.avg_width)
@@ -127,13 +130,13 @@ class PathEnvironment(gym.Env):
             stroke_point = self.prev_stroke_point + stroke_direction * stroke_step_size
 
             distance = np.linalg.norm(path_center - stroke_point)
-            print("Distance: ",distance)
+            # print("Distance: ",distance)
 
             # Width decreases
             if width_change < 0:
                 if np.random.rand() < self.width_decrease_influence_prob:
                     # User affected when out of scope(threshold)
-                    if ((old_width / 2) * 1.2 < distance):
+                    if ((old_width / 2) * 1.1 < distance):
                         adjustment_factor = width_change * self.decrease_factor_out                              # positive affected by the width decrease
                         stroke_point += (path_center - stroke_point) * adjustment_factor
                     # User affected when in scope(threshold)
@@ -141,7 +144,7 @@ class PathEnvironment(gym.Env):
                         adjustment_factor = width_change * self.decrease_factor_in                               # positive affected by the width decrease
                         stroke_point += (path_center - stroke_point) * adjustment_factor
                 else:
-                    if (distance <= 5):  # Overflow prevention
+                    if (distance <= 7):  # Overflow prevention
                         jitter = np.random.uniform(0, self.jitter_factor)
                         adjustment_factor = width_change * jitter  # Jitter
                         stroke_point += (path_center - stroke_point) * adjustment_factor
@@ -152,7 +155,7 @@ class PathEnvironment(gym.Env):
             else:
                 if np.random.rand() < self.width_increase_influence_prob:
                     # User affected when out of scope (large)
-                    if ((old_width / 2) * 1.5 < distance):
+                    if ((old_width / 2) * 1.1 < distance):
                         adjustment_factor = width_change * self.increase_factor_out                              # positive affected by the width increase
                         stroke_point += (path_center - stroke_point) * adjustment_factor
                         # User affected when in scope(small)
@@ -160,7 +163,7 @@ class PathEnvironment(gym.Env):
                         adjustment_factor = width_change * self.increase_factor_in                               # negative affected by the width increase
                         stroke_point += (path_center - stroke_point) * adjustment_factor
                 else:
-                    if(distance <= 5):                                                                           # Overflow prevention
+                    if(distance <= 7):                                                                           # Overflow prevention
                         jitter = np.random.uniform(0, self.jitter_factor)
                         adjustment_factor = width_change * jitter                                                # Jitter
                         stroke_point += (path_center - stroke_point) * adjustment_factor
@@ -190,7 +193,7 @@ class PathEnvironment(gym.Env):
     def calculate_reward(self, state):
         # last 10 points are concerned
         # print("rewardstate: ",state)
-        N = min(10, state.shape[0])
+        N = min(20, state.shape[0])
         stroke_points = state[-N:, 0:2]
         path_centers = state[-N:, 2:4]
 
@@ -202,24 +205,24 @@ class PathEnvironment(gym.Env):
 
         # width is averange of the last 10 widths
         width = np.mean(state[-N:, 4])
-        print("Width: ",width)
+        # print("Width: ",width)
         epsilon = 0.001
 
         # Smaller width, larger reward
         reward_width = np.log((1 / (width + epsilon)) + 1)
 
         # If width >= distance
-        if(width >= dtw_distance+1.5):
+        if(width/2 >= dtw_distance+0.2):
             # weight of width and DTW distance
-            w_width = 0.8
-            w_dtw_distance = 0.2
+            w_width = 0.7
+            w_dtw_distance = 0.3
         # If width < distance
         else:
-            w_width = 0.3
-            w_dtw_distance = 0.7
+            w_width = 0.2
+            w_dtw_distance = 0.8
 
         total_reward = w_width * reward_width + w_dtw_distance * reward_dtw_distance
-        print("Width reward: ",w_width * reward_width, "\nDistance reward: ",w_dtw_distance * reward_dtw_distance)
+        # print("Width reward: ",w_width * reward_width, "\nDistance reward: ",w_dtw_distance * reward_dtw_distance)
         return total_reward
 
 

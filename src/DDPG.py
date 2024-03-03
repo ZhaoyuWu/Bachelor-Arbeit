@@ -88,9 +88,9 @@ class DDPG(object):
             :return: act
             """
             inputs = tl.layers.Input(input_state_shape, name='A_input')
-            x = tl.layers.Dense(n_units=30, act=tf.nn.relu, W_init=W_init, b_init=b_init, name='A_l1')(inputs)
+            x = tl.layers.Dense(n_units=15, act=tf.nn.relu, W_init=W_init, b_init=b_init, name='A_l1')(inputs)
             x = tl.layers.Dense(n_units=a_dim, act=tf.nn.tanh, W_init=W_init, b_init=b_init, name='A_a')(x)
-            x = tl.layers.Lambda(lambda x: np.array(a_bound) * x)(x)  # 注意这里，先用tanh把范围限定在[-1,1]之间，再进行映射
+            x = tl.layers.Lambda(lambda x: np.array(a_bound) * x)(x)
             return tl.models.Model(inputs=inputs, outputs=x, name='Actor' + name)
 
         # Critic network，input s，a。output Q(s,a)
@@ -105,9 +105,9 @@ class DDPG(object):
             s = tl.layers.Input(input_state_shape, name='C_s_input')
             a = tl.layers.Input(input_action_shape, name='C_a_input')
             x = tl.layers.Concat(1)([s, a])
-            x = tl.layers.Dense(n_units=60, act=tf.nn.relu, W_init=W_init, b_init=b_init, name='C_l1')(x)
+            x = tl.layers.Dense(n_units=30, act=tf.nn.relu, W_init=W_init, b_init=b_init, name='C_l1')(x)
             x = tl.layers.Dense(n_units=1, W_init=W_init, b_init=b_init, name='C_out')(x)
-            print("Q: ",x)
+            # print("Q: ",x)
             return tl.models.Model(inputs=[s, a], outputs=x, name='Critic' + name)
 
         self.actor = get_actor([None, s_dim])
@@ -184,7 +184,7 @@ class DDPG(object):
             q_ = self.critic_target([bs_, a_])
             y = br + GAMMA * q_
             q = self.critic([bs, ba])
-            print("Q: ",q)
+            # print("Q: ",q)
             td_error = tf.losses.mean_squared_error(y, q)
         c_grads = tape.gradient(td_error, self.critic.trainable_weights)
         self.critic_opt.apply_gradients(zip(c_grads, self.critic.trainable_weights))
@@ -301,8 +301,8 @@ if __name__ == '__main__':
                 # Because a is the mean, the probability of a is maximized. But how big a is relative to the other probabilities by is adjusted by the VAR. Here we can actually add update the VAR to dynamically adjust the certainty of a
                 # And then do the trimming
                 # Or any suitable decay factor
-                print("DDGP Action",a)
-                a = np.clip(np.random.normal(a, VAR), -3, 1)
+                # print("DDGP Action",a)
+                a = np.clip(np.random.normal(a, VAR), -2, 1)
 
                 # print(env.step(a))
                 s_, r, done, info = env.step(a)

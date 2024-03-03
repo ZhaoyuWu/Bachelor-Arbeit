@@ -13,10 +13,10 @@ def plot_observation(ax, accumulated_obs):
     center_y = accumulated_obs[:, 3]
 
     # draw stroke
-    ax.scatter(x, y, color='red', marker='o', label='Stroke Points')  # 使用红色圆圈表示笔迹点
+    ax.scatter(x, y, color='red', marker='o', label='Stroke Points')
 
     # draw path
-    ax.scatter(center_x, center_y, color='blue', marker='x', label='Path Center')  # 使用蓝色叉号表示路径中心
+    ax.scatter(center_x, center_y, color='blue', marker='x', label='Path Center')
 
     # Start point
     ax.scatter(x[0], y[0], s=100, c='yellow', edgecolors='black', zorder=5, label='Start Point')
