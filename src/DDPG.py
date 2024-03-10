@@ -57,8 +57,8 @@ MEMORY_CAPACITY = 10000  # size of replay buffer
 BATCH_SIZE = 32  # update batchsize
 
 MAX_EPISODES = 50  # total number of episodes for training
-MAX_EP_STEPS = 20  # total number of steps for each episode
-TEST_PER_EPISODES = 10  # test the model per episodes
+MAX_EP_STEPS = 200  # total number of steps for each episode
+TEST_PER_EPISODES = 20  # test the model per episodes
 VAR = 1  # control exploration
 
 
@@ -302,8 +302,8 @@ if __name__ == '__main__':
                 # And then do the trimming
                 # Or any suitable decay factor
                 # print("DDGP Action",a)
-                a = np.clip(np.random.normal(a, VAR), -2, 1)
-
+                a = np.clip(np.random.normal(a, VAR), -2, 2)
+                # a = np.around(a, decimals=1)
                 # print(env.step(a))
                 s_, r, done, info = env.step(a)
 
@@ -311,8 +311,10 @@ if __name__ == '__main__':
                 # print("Action: ",a, "Reward: ", r)
                 ddpg.store_transition(s, a, r / 10, s_)
 
-                N = min(10, s.shape[0])
-                width_history.append(np.mean(s[-N:, 4]))  # 假设环境中有一个属性 avg_width 记录当前的宽度
+                N = min(15, s.shape[0])
+
+                width_history.append(np.mean(s[-N:, 4]))
+                # print("Width: ",np.mean(s[-N:, 4]))
 
                 # data full, start learning
                 if ddpg.pointer > MEMORY_CAPACITY:
@@ -341,7 +343,8 @@ if __name__ == '__main__':
 
                 plt.show()
 
-            reward_history.append(ep_reward)
+            if(i%MAX_EP_STEPS != 0):
+                reward_history.append(ep_reward)
 
             axs[1].clear()
             axs[1].plot(reward_history, label='Reward')

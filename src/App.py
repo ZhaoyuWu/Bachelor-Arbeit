@@ -25,6 +25,7 @@ def submit_path():
     if global_path_data is not None:
         # preprocessing
         processed_data = preprocess_data(frontend_data, global_path_data)
+        print(frontend_data)
         # apply DDPG to processed data
         global_path_data = apply_model_to_processed_data(processed_data)
         # print(global_path_data)

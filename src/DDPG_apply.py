@@ -5,7 +5,9 @@ a_dim = 1  # action dimension
 s_dim = 15  # state dimension
 a_bound = 1  # action bound
 
-PIXELS_PER_CM = 96 / 2.54
+PIXELS_PER_CM = 1 # 96 * 2
+
+VAR = 0.2
 
 ddpg_model = DDPG(a_dim, s_dim, a_bound)
 
@@ -21,46 +23,63 @@ Step 4. Convert result units to pixel
 
 def apply_model_to_processed_data(processed_data):
     ddpg_model.load_ckpt()
-
+    # print(processed_data)
     # input to cm
     processed_data_cm = pixels_to_cm(np.array(processed_data), PIXELS_PER_CM)
 
     adjusted_data_cm = []
 
-    # each X points apply once DDPG
-    step_size = 1
+    step_size = 10  # Apply DDPG every 10 steps
+    window_size = 3  # Size of the window to create a state
 
-    for i in range(0, len(processed_data_cm), step_size):
-        window_data = processed_data_cm[max(i-2, 0):i+1]
-        while len(window_data) < 3:
-            window_data = np.vstack([window_data[0], window_data])
-        state = np.concatenate(window_data).flatten()
+    width_scalar = 1
 
+    for i in range(0, len(processed_data_cm) - 2 * step_size, step_size):
+        indices = [i, i + step_size, i + 2 * step_size]
+        window_data = processed_data_cm[indices]
+
+        state = window_data.flatten()
+
+        # 'state' should be exactly of length 15 (3 points * 5 dimensions each)
         action = ddpg_model.choose_action(state.reshape(1, -1))
+
+        # action = np.clip(np.random.normal(action, VAR), -1, 1)
+
+        action *= 0.5 # Scaling factor
+
+        if(i==0):
+            width_scalar = processed_data_cm[0][4] / (processed_data_cm[0][4] + action[0])
 
         for j in range(i, min(i+step_size, len(processed_data_cm))):
             adjusted_point_cm = [
                 processed_data_cm[j][2],  # x
                 processed_data_cm[j][3],  # y
-                max(processed_data_cm[j][4] + action[0],0.1) # width + action
+                max((processed_data_cm[j][4] + action[0]),0.5) # width + action
             ]
-            print(action[0])
+            if(j==i):
+                print(processed_data_cm[j][0],processed_data_cm[j][1],processed_data_cm[j][2],processed_data_cm[j][3],processed_data_cm[j][4])
+                # print(processed_data_cm[j][4] + action[0])
+                print(action[0])
             adjusted_data_cm.append(adjusted_point_cm)
+
+    while len(adjusted_data_cm) < len(processed_data_cm):
+        adjusted_data_cm.append(adjusted_data_cm[-1])
 
     # result to pixel
     adjusted_data_pixels = cm_to_pixels(np.array(adjusted_data_cm), PIXELS_PER_CM)
+
     return adjusted_data_pixels
 
 
-def width_mapping(width):
-    steep_factor = 10
-    sigmoid_width = (width - 1.5) / 1.5 * steep_factor
-
-    sigmoid_width = 1 / (1 + np.exp(-sigmoid_width))
-
-    mapped_width = sigmoid_width * 3.9 + 0.1
-
-    return mapped_width
+# def width_mapping(width):
+#     steep_factor = 10
+#     sigmoid_width = (width - 1.5) / 1.5 * steep_factor
+#
+#     sigmoid_width = 1 / (1 + np.exp(-sigmoid_width))
+#
+#     mapped_width = sigmoid_width * 3.9 + 0.1
+#
+#     return mapped_width
 
 def pixels_to_cm(data, conversion_rate):
 
@@ -71,20 +90,35 @@ def cm_to_pixels(data, conversion_rate):
     return data * conversion_rate
 
 
-# Test
+if __name__ == "__main__":
+    # Test
 
-processed_data = [[-6.62129874,  4.14477269, -6.29734142,  5.16526392,  0.75056286],
- [-4.42819322, -6.94921914,  0.83801895, -9.50826167,  0.75142882],
- [-6.45979031,  1.5257672 ,  7.45891672, -9.55752897,  0.55500714],
- [-8.22594932,  2.13430093,  4.64449773, -3.52779562,  1.60460302],
- [-7.58728258, -1.51738657,  6.13122296, -0.22713619,  1.49570679],
- [-0.78442464,  4.72888471,  3.17566733,  5.40814836,  1.21194631],
- [-5.87332563,  8.6873403 ,  3.84553129,  3.66590753,  1.76625567],
- [-2.71460278,  8.51137026,  6.98391303, -1.08194587,  1.70850523],
- [ 0.06834542, -0.98321257, -5.00663982, -4.52746667,  1.37803155],
- [ 3.80789657, -7.73523908, -0.21150073,  9.94249   ,  1.80240692]]
+    processed_data = [[-6,  -4, -6,  -5,  2],
+     [-6,  -5, -6,  -4,  2],
+     [-6,  -6, -6,  -3,  2],
+     [-6,  -4, -6,  -2,  2],
+     [-5,  -4, -5,  -2,  2],
+     [-4,  -4, -4,  -2,  2],
+     [-3,  -4, -3,  -2,  2],
+                      [-2, -3, -3, -3, 2],
+                      [-2, -2, -2, -2, 2],
+                      [-1, -2, -2, -3, 2],
+                      [0, -2, -3, -4, 2],
+                      [1, -1, -4, -5, 2],
+     [2,  0, -5,  -6,  2],
+     [2,  1, -4,  -6,  2],
+     [2,  2, -4,  -5,  2],
+     [3,  2, -3,  -4,  2],
+     [3,  3, -3,  -3,  2],
+     [2,  3, -3,  -2,  2],
+     [2,  2, -2,  -2,  2],
+     [2,  1, -1,  -1,  2],
+     [1,  1, -1,  0,  2],
+     [1,  0, 0,  0,  2],
+     [0,  0, 0,  0,  2],
+     [-1,  -1, -1,  0,  2]]
 
 
 
-print(apply_model_to_processed_data(processed_data))
+    print(apply_model_to_processed_data(processed_data))
 
