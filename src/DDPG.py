@@ -30,6 +30,7 @@ python tutorial_DDPG.py --train/test
 import argparse
 import os
 import time
+import sqlite3
 
 import gym
 import matplotlib.pyplot as plt
@@ -56,10 +57,10 @@ TAU = 0.01  # soft replacement
 MEMORY_CAPACITY = 10000  # size of replay buffer
 BATCH_SIZE = 32  # update batchsize
 
-MAX_EPISODES = 50  # total number of episodes for training
-MAX_EP_STEPS = 200  # total number of steps for each episode
-TEST_PER_EPISODES = 20  # test the model per episodes
-VAR = 1  # control exploration
+MAX_EPISODES = 100  # total number of episodes for training
+MAX_EP_STEPS = 50  # total number of steps for each episode
+TEST_PER_EPISODES = 10  # test the model per episodes
+VAR = 2  # control exploration
 
 
 ###############################  DDPG  ####################################
@@ -90,7 +91,8 @@ class DDPG(object):
             inputs = tl.layers.Input(input_state_shape, name='A_input')
             x = tl.layers.Dense(n_units=15, act=tf.nn.relu, W_init=W_init, b_init=b_init, name='A_l1')(inputs)
             x = tl.layers.Dense(n_units=a_dim, act=tf.nn.tanh, W_init=W_init, b_init=b_init, name='A_a')(x)
-            x = tl.layers.Lambda(lambda x: np.array(a_bound) * x)(x)
+            x = tl.layers.Lambda(lambda x: x * (0.2 - (-1)) / 2 + (0.2 + (-1)) / 2)(x)
+            x = tl.layers.Lambda(lambda x: tf.round(x * 10) / 10.0)(x)
             return tl.models.Model(inputs=inputs, outputs=x, name='Actor' + name)
 
         # Critic network，input s，a。output Q(s,a)
@@ -248,6 +250,75 @@ class DDPG(object):
         tl.files.load_hdf5_to_weights_in_order('model/ddpg_critic.hdf5', self.critic)
         tl.files.load_hdf5_to_weights_in_order('model/ddpg_critic_target.hdf5', self.critic_target)
 
+    def get_latest_data(self):
+        """
+        Retrieve the latest 10 data sets from the database and perform calculations
+        :return: None
+        """
+        conn = sqlite3.connect('processed_data.db')
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT data FROM processed_data ORDER BY id DESC LIMIT 10")
+        latest_data = cursor.fetchall()
+
+        concatenated_data = np.concatenate([eval(data[0]) for data in latest_data])
+
+        points = concatenated_data[:, :4]
+        width = concatenated_data[:, 4]
+
+        pen_to_center_distance = np.linalg.norm(points[:, :2] - points[:, 2:4], axis=1)
+
+        new_data = np.column_stack((pen_to_center_distance, width))
+
+        conn.close()
+
+        increment = new_data[1:] - new_data[:-1]
+
+        decrease_ratio = len(increment[(increment[:, 1] <= 0) & (increment[:, 0] <= 0)]) / len(increment[(increment[:, 0] <= 0)])
+
+        increase_ratio = len(increment[(increment[:, 1] <= 0) & (increment[:, 0] > 0)]) / len(increment[(increment[:, 0] > 0)])
+
+        jitter_ratio = len(increment[(increment[:, 1] > 0) & (increment[:, 0] <= 0)]) / len(increment[(increment[:, 0] <= 0)])
+
+        width_decrease_influence_prob = max(decrease_ratio - jitter_ratio,0.1)
+
+        width_increase_influence_prob = max(increase_ratio - jitter_ratio, 0.1)
+
+        decrease_width_increase_distance = increment[(increment[:, 1] <= 0) & (increment[:, 0] > 0)]
+
+        increase_width_increase_distance = increment[(increment[:, 1] > 0) & (increment[:, 0] > 0)]
+
+        decrease_width_decrease_distance = increment[(increment[:, 1] <= 0) & (increment[:, 0] <= 0)]
+
+        increase_width_decrease_distance = increment[(increment[:, 1] > 0) & (increment[:, 0] <= 0)]
+
+        jitter_factor = np.median(decrease_width_increase_distance[:, 0])
+
+        increase_factor_in = np.median(increase_width_increase_distance[:, 0]) * (1 - width_increase_influence_prob)
+
+        increase_factor_out = np.median(increase_width_decrease_distance[:, 0]) * width_increase_influence_prob
+
+        decrease_factor_in = np.median(decrease_width_decrease_distance[:, 0]) * width_decrease_influence_prob
+
+        decrease_factor_out = np.median(decrease_width_increase_distance[:, 0]) * (1 - width_decrease_influence_prob)
+
+        print(width_decrease_influence_prob,
+                           width_increase_influence_prob,
+                           jitter_factor,
+                           increase_factor_in,
+                           increase_factor_out,
+                           decrease_factor_in,
+                           decrease_factor_out)
+        # update factors
+        env.set_parameters(width_decrease_influence_prob,
+                           width_increase_influence_prob,
+                           jitter_factor,
+                           increase_factor_in,
+                           increase_factor_out,
+                           decrease_factor_in,
+                           decrease_factor_out)
+
+
 
 if __name__ == '__main__':
 
@@ -273,6 +344,8 @@ if __name__ == '__main__':
     # ddpg
     ddpg = DDPG(a_dim, s_dim, a_bound)
 
+    ddpg.get_latest_data()
+
     # train：
     if args.train:  # train
 
@@ -280,8 +353,8 @@ if __name__ == '__main__':
         t0 = time.time()  # time
 
         # 初始化图像显示
-        plt.ion()
-        fig, axs = plt.subplots(3, 1, figsize=(10, 12))
+        # plt.ion()
+        # fig, axs = plt.subplots(3, 1, figsize=(10, 12))
 
         reward_history = []
         width_history = []
@@ -303,7 +376,7 @@ if __name__ == '__main__':
                 # Or any suitable decay factor
                 # print("DDGP Action",a)
                 a = np.clip(np.random.normal(a, VAR), -2, 2)
-                # a = np.around(a, decimals=1)
+                a = np.around(a, decimals=1)
                 # print(env.step(a))
                 s_, r, done, info = env.step(a)
 
@@ -323,10 +396,10 @@ if __name__ == '__main__':
                 stroke_points = s_[:, :2]
                 path_centers = s_[:, 2:4]
 
-                axs[0].plot(stroke_points[:, 0], stroke_points[:, 1],'r-')
-                axs[0].plot(path_centers[:, 0], path_centers[:, 1],'b-')
-
-                plt.pause(0.1)
+                # axs[0].plot(stroke_points[:, 0], stroke_points[:, 1],'r-')
+                # axs[0].plot(path_centers[:, 0], path_centers[:, 1],'b-')
+                #
+                # plt.pause(0.1)
 
                 if done:
                     break
@@ -343,22 +416,22 @@ if __name__ == '__main__':
 
                 plt.show()
 
-            if(i%MAX_EP_STEPS != 0):
-                reward_history.append(ep_reward)
+            # if(i%MAX_EP_STEPS != 0):
+            #     reward_history.append(ep_reward)
 
-            axs[1].clear()
-            axs[1].plot(reward_history, label='Reward')
-            axs[1].set_xlabel('Episode')
-            axs[1].set_ylabel('Cumulative Reward')
-            axs[1].legend()
-
-            axs[2].clear()
-            axs[2].plot(width_history, label='Width')
-            axs[2].set_xlabel('Step')
-            axs[2].set_ylabel('Width')
-            axs[2].legend()
-
-            plt.pause(0.01)
+            # axs[1].clear()
+            # axs[1].plot(reward_history, label='Reward')
+            # axs[1].set_xlabel('Episode')
+            # axs[1].set_ylabel('Cumulative Reward')
+            # axs[1].legend()
+            #
+            # axs[2].clear()
+            # axs[2].plot(width_history, label='Width')
+            # axs[2].set_xlabel('Step')
+            # axs[2].set_ylabel('Width')
+            # axs[2].legend()
+            #
+            # plt.pause(0.01)
 
             # test
             if i and not i % TEST_PER_EPISODES:
@@ -386,7 +459,7 @@ if __name__ == '__main__':
 
         print('\nRunning time: ', time.time() - t0)
         ddpg.save_ckpt()
-    plt.show(block=True)
+    # plt.show(block=True)
 
     env = PathEnvironment()
     ddpg.load_ckpt()

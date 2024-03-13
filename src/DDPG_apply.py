@@ -22,7 +22,7 @@ Step 4. Convert result units to pixel
 """
 
 def apply_model_to_processed_data(processed_data):
-    ddpg_model.load_ckpt()
+
     # print(processed_data)
     # input to cm
     processed_data_cm = pixels_to_cm(np.array(processed_data), PIXELS_PER_CM)
@@ -31,36 +31,53 @@ def apply_model_to_processed_data(processed_data):
 
     step_size = 10  # Apply DDPG every 10 steps
     window_size = 3  # Size of the window to create a state
+    batch_size = 100
+
+    ddpg_model.load_ckpt()
 
     width_scalar = 1
+    for batch_start in range(0, len(processed_data_cm), batch_size):
+        batch_end = min(batch_start + batch_size, len(processed_data_cm))
+        batch_data = processed_data_cm[batch_start:batch_end]
 
-    for i in range(0, len(processed_data_cm) - 2 * step_size, step_size):
-        indices = [i, i + step_size, i + 2 * step_size]
-        window_data = processed_data_cm[indices]
+        path_x_offset = batch_data[0][2]
+        path_y_offset = batch_data[0][3]
 
-        state = window_data.flatten()
+        for k in range(len(batch_data)):
+            batch_data[k][0] -= path_x_offset
+            batch_data[k][1] -= path_y_offset
+            batch_data[k][2] -= path_x_offset
+            batch_data[k][3] -= path_y_offset
 
-        # 'state' should be exactly of length 15 (3 points * 5 dimensions each)
-        action = ddpg_model.choose_action(state.reshape(1, -1))
+        for i in range(0, batch_size - 2, step_size):
+            indices = [i, i + 1, i + 2]
+            window_data = batch_data[indices]
 
-        # action = np.clip(np.random.normal(action, VAR), -1, 1)
+            state = window_data.flatten()
 
-        action *= 0.5 # Scaling factor
+            # 'state' should be exactly of length 15 (3 points * 5 dimensions each)
+            action = ddpg_model.choose_action(state.reshape(1, -1))
 
-        if(i==0):
-            width_scalar = processed_data_cm[0][4] / (processed_data_cm[0][4] + action[0])
+            # action = np.clip(np.random.normal(action, VAR), -1, 1)
 
-        for j in range(i, min(i+step_size, len(processed_data_cm))):
-            adjusted_point_cm = [
-                processed_data_cm[j][2],  # x
-                processed_data_cm[j][3],  # y
-                max((processed_data_cm[j][4] + action[0]),0.5) # width + action
-            ]
-            if(j==i):
-                print(processed_data_cm[j][0],processed_data_cm[j][1],processed_data_cm[j][2],processed_data_cm[j][3],processed_data_cm[j][4])
-                # print(processed_data_cm[j][4] + action[0])
-                print(action[0])
-            adjusted_data_cm.append(adjusted_point_cm)
+            action *= 1 # Scaling factor
+
+            if(i==0):
+                width_scalar = processed_data_cm[0][4] / (processed_data_cm[0][4] + action[0])
+
+            for j in range(i, min(i + step_size, len(processed_data_cm))):
+
+                adjusted_point_cm = [
+                    batch_data[j][2] + path_x_offset,  # x
+                    batch_data[j][3] + path_y_offset,  # y
+                    min(max((batch_data[j][4] + action[0]),0.4),2) # width + action is limited between 0.5 and 2
+                ]
+                if(j==i):
+                    # print(processed_data_cm[j][0],processed_data_cm[j][1],processed_data_cm[j][2],processed_data_cm[j][3],processed_data_cm[j][4])
+                    # print(processed_data_cm[j][4] + action[0])
+                    print(action[0])
+                adjusted_data_cm.append(adjusted_point_cm)
+
 
     while len(adjusted_data_cm) < len(processed_data_cm):
         adjusted_data_cm.append(adjusted_data_cm[-1])

@@ -3,11 +3,23 @@ from flask_cors import CORS
 from Path_generator import RandomPathGenerator
 from Preprocess import preprocess_data
 from DDPG_apply import apply_model_to_processed_data
+import sqlite3
 
 app = Flask(__name__)
 CORS(app)
 
 global_path_data = None
+
+# 创建数据库连接和游标
+conn = sqlite3.connect('processed_data.db', check_same_thread=False)
+cursor = conn.cursor()
+
+# 创建数据表
+cursor.execute('''CREATE TABLE IF NOT EXISTS processed_data (
+                    id INTEGER PRIMARY KEY,
+                    data TEXT
+                )''')
+conn.commit()
 
 @app.route('/generate-path', methods=['GET'])
 def generate_path():
@@ -25,10 +37,18 @@ def submit_path():
     if global_path_data is not None:
         # preprocessing
         processed_data = preprocess_data(frontend_data, global_path_data)
-        print(frontend_data)
+
+        # cursor.execute("INSERT INTO processed_data (data) VALUES (?)", (str(processed_data),))
+        # conn.commit()
+        #
+        # cursor.execute("SELECT COUNT(*) FROM processed_data")
+        # count = cursor.fetchone()[0]
+        # if count > 20:
+        #     cursor.execute("DELETE FROM processed_data WHERE id = (SELECT MIN(id) FROM processed_data)")
+        #     conn.commit()
+
         # apply DDPG to processed data
         global_path_data = apply_model_to_processed_data(processed_data)
-        # print(global_path_data)
         return jsonify({"status": "success", "message": "Path data received and processed"})
     else:
         return jsonify({"status": "error", "message": "Backend path data not available"})

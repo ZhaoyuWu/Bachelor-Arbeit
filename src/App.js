@@ -116,7 +116,6 @@ function App() {
 
     newPathData = newPathData.map(point => [cmToPixels(point[0]), cmToPixels(point[1]), cmToPixels(point[2])]);
 
-
     console.log("New path data received:", newPathData);
 
     // Step 3: Updating the canvas with new path data

@@ -46,21 +46,21 @@ class PathEnvironment(gym.Env):
 
         # Jitter factor
 
-        self.jitter_factor = 0.05
+        self.jitter_factor = 0.2
         # self.jitter_factor = mean(get_increment(divergent_points))
 
         # Width change factors
 
-        self.increase_factor_in = 0.07
+        self.increase_factor_in = 0.25
         # Width increase factor in scope = mean(get_stroke_change(in_points)) (when width increases)
 
-        self.increase_factor_out = -0.01
+        self.increase_factor_out = -0.1
         # Width increase factor out of scope = mean(get_stroke_change(out_points)) (when width increases)
 
-        self.decrease_factor_in = -0.05
+        self.decrease_factor_in = -0.2
         # Width decrease factor in scope = mean(get_stroke_change(in_points)) (when width decreases)
 
-        self.decrease_factor_out = 0
+        self.decrease_factor_out = 0.05
         # Width decrease factor in scope = mean(get_stroke_change(in_points)) (when width decreases)
 
         # ==============================================================================================================
@@ -74,8 +74,18 @@ class PathEnvironment(gym.Env):
         x = radius * np.cos(angle)
         y = radius * np.sin(angle)
 
-        self.prev_stroke_point = np.array([0.0, 0.0])                            # Stroke start point
+        self.prev_stroke_point = np.array([x, y])                            # Stroke start point
         self.prev_path_center = np.array([0.0, 0.0])                         # Path start point
+
+    def set_parameters(self, width_decrease_influence_prob, width_increase_influence_prob, jitter_factor,
+                       increase_factor_in, increase_factor_out, decrease_factor_in, decrease_factor_out):
+        self.width_decrease_influence_prob = width_decrease_influence_prob
+        self.width_increase_influence_prob = width_increase_influence_prob
+        self.jitter_factor = jitter_factor
+        self.increase_factor_in = increase_factor_in
+        self.increase_factor_out = increase_factor_out
+        self.decrease_factor_in = decrease_factor_in
+        self.decrease_factor_out = decrease_factor_out
 
     def reset(self):
         # reset state
@@ -83,8 +93,14 @@ class PathEnvironment(gym.Env):
         self.avg_width = 3
         self.stroke_direction = random.uniform(0, 2 * np.pi)
         self.path_direction = self.stroke_direction
-        self.prev_stroke_point = self.prev_path_center
-        # self.prev_path_center = np.array([0.0, 0.0])
+
+        radius = np.random.rand() * (self.avg_width * 2)
+        angle = np.random.rand() * 2 * np.pi
+        x = radius * np.cos(angle)
+        y = radius * np.sin(angle)
+
+        self.prev_stroke_point = np.array([x, y])
+        self.prev_path_center = np.array([0.0, 0.0])
         return self.state
 
 
@@ -92,9 +108,9 @@ class PathEnvironment(gym.Env):
         # Change of width: new width = old width + action
         width_change = action
 
-        print("Action: ", action)
+        # print("Action: ", action)
 
-        print("Width: ",self.avg_width)
+        # print("Width: ",self.avg_width)
 
         old_width = self.avg_width
         self.avg_width += action
@@ -109,8 +125,9 @@ class PathEnvironment(gym.Env):
 
         self.avg_width = mapped_width
 
-        new_width = max(self.avg_width, 0.1)
+        self.avg_width = max(np.round(self.avg_width, 1), 0.1)
 
+        new_width = self.avg_width
 
         new_state = np.zeros((3, 5))
 
@@ -120,7 +137,7 @@ class PathEnvironment(gym.Env):
 
         for i in range(3):
             # Update the direction of the path
-            path_angle_change = np.random.uniform(-np.pi / 64, np.pi / 64)
+            path_angle_change = np.random.uniform(-np.pi / 16, np.pi / 16)
             self.path_direction += path_angle_change
 
             # Update the center point of path
@@ -137,6 +154,8 @@ class PathEnvironment(gym.Env):
 
             distance = min(np.linalg.norm(path_center - stroke_point),5)
             # print("Distance: ",distance)
+
+            stroke_step_size = max(0.05, min(0.1, distance * 0.1))
 
             # Width decreases
             if (distance <= 3):                                                                           # Overflow prevention
@@ -197,9 +216,9 @@ class PathEnvironment(gym.Env):
         return self.state, reward, done, info
 
     def calculate_reward(self, state):
-        N = min(20, state.shape[0])
-        stroke_points = state[-N:, 0:2]
-        path_centers = state[-N:, 2:4]
+        stroke_points = state[-15:, 0:2]
+
+        path_centers = state[-15:, 2:4]
 
         # Calculate the DTW distance between path and stroke
         dtw_result = dtw(stroke_points, path_centers, dist=euclidean)
@@ -208,17 +227,17 @@ class PathEnvironment(gym.Env):
         reward_dtw_distance = np.exp(-alpha * dtw_distance)
 
         # width is average of the last 10 widths
-        width = np.mean(state[-N:, 4])
+        width = np.mean(state[-15:, 4])
         epsilon = 0.001
 
         # Adjusted reward for width, considering the relation to DTW distance
         if width / 2 < (dtw_distance + 0.05) * 0.5:
             # Encourage increasing width if it's half is far less than DTW distance
             # Apply a penalty if width's half is significantly greater than the DTW distance
-            penalty_factor = 1
+            penalty_factor = 0.5
             reward_width_adjustment = -np.log((width / 2) / (dtw_distance + epsilon)) * penalty_factor
         if width / 2 > (dtw_distance + 0.05) * 1.2:
-            penalty_factor = 1
+            penalty_factor = 0.5
             reward_width_adjustment = np.log((width / 2) / (dtw_distance + epsilon)) * penalty_factor
         else:
             reward_width_adjustment = 0
@@ -226,16 +245,12 @@ class PathEnvironment(gym.Env):
         # Combine rewards
         reward_width = np.log((1 / (width + epsilon)) + 1)
 
-        # print(width / 2 ," - ",(dtw_distance + 0.05) * 0.8 )
-
         if (width / 2 > (dtw_distance + 0.05) * 0.8):
-            w_width = 0.8
-            w_distance = 0.2
+            w_width = 0.7
+            w_distance = 0.3
         else:
-            w_width = 0.05
-            w_distance = 0.95
-        print("dist:", dtw_distance)
-        print("d_r: ",w_distance *reward_dtw_distance,"w_r: ",w_width * reward_width,"penalty: ",reward_width_adjustment)
+            w_width = 0.3
+            w_distance = 0.7
 
         total_reward = w_distance * reward_dtw_distance + w_width * reward_width - reward_width_adjustment
 

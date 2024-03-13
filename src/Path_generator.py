@@ -19,7 +19,7 @@ class RandomPathGenerator:
             if i % 10 == 0:  # change width each 10 steps
                 self.width_change = random.choice([-0.05, 0.05])
             path_width = 2 # max(1, min(3, self.prev_path_width + self.width_change))
-            path_angle_change = np.random.uniform(-np.pi / 64, np.pi / 64)
+            path_angle_change = np.random.uniform(-np.pi / 16, np.pi / 16)
             self.path_direction += path_angle_change
             path_direction = np.array([np.cos(self.path_direction), np.sin(self.path_direction)])
             path_center = self.prev_path_center + path_direction * path_step_size
