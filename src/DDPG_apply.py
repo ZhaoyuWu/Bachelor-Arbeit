@@ -31,7 +31,7 @@ def apply_model_to_processed_data(processed_data):
 
     step_size = 10  # Apply DDPG every 10 steps
     window_size = 3  # Size of the window to create a state
-    batch_size = 100
+    batch_size = 50
 
     ddpg_model.load_ckpt()
 
@@ -70,7 +70,7 @@ def apply_model_to_processed_data(processed_data):
                 adjusted_point_cm = [
                     batch_data[j][2] + path_x_offset,  # x
                     batch_data[j][3] + path_y_offset,  # y
-                    min(max((batch_data[j][4] + action[0]),0.4),2) # width + action is limited between 0.5 and 2
+                    min(max((batch_data[j][4] + action[0]),0.2),2) # width + action is limited between 0.5 and 2
                 ]
                 if(j==i):
                     # print(processed_data_cm[j][0],processed_data_cm[j][1],processed_data_cm[j][2],processed_data_cm[j][3],processed_data_cm[j][4])

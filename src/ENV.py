@@ -125,7 +125,7 @@ class PathEnvironment(gym.Env):
 
         self.avg_width = mapped_width
 
-        self.avg_width = max(np.round(self.avg_width, 1), 0.1)
+        self.avg_width = max(np.round(self.avg_width, 2), 0.1)
 
         new_width = self.avg_width
 

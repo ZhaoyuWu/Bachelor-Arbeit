@@ -4,6 +4,7 @@ from Path_generator import RandomPathGenerator
 from Preprocess import preprocess_data
 from DDPG_apply import apply_model_to_processed_data
 import sqlite3
+import subprocess
 
 app = Flask(__name__)
 CORS(app)
@@ -38,14 +39,21 @@ def submit_path():
         # preprocessing
         processed_data = preprocess_data(frontend_data, global_path_data)
 
-        # cursor.execute("INSERT INTO processed_data (data) VALUES (?)", (str(processed_data),))
-        # conn.commit()
-        #
-        # cursor.execute("SELECT COUNT(*) FROM processed_data")
-        # count = cursor.fetchone()[0]
-        # if count > 20:
-        #     cursor.execute("DELETE FROM processed_data WHERE id = (SELECT MIN(id) FROM processed_data)")
-        #     conn.commit()
+        cursor.execute("INSERT INTO processed_data (data) VALUES (?)", (str(processed_data),))
+        conn.commit()
+
+        cursor.execute("SELECT MAX(id) FROM processed_data")
+        max_id = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM processed_data")
+        count = cursor.fetchone()[0]
+
+        if count > 20:
+            cursor.execute("DELETE FROM processed_data WHERE id = (SELECT MIN(id) FROM processed_data)")
+            conn.commit()
+
+        if max_id is not None and max_id % 10 == 0:
+            run_ddpg_script()
 
         # apply DDPG to processed data
         global_path_data = apply_model_to_processed_data(processed_data)
@@ -61,6 +69,10 @@ def get_processed_path():
         return jsonify(path_data_list)
     else:
         return jsonify({"status": "error", "message": "Processed path data not available"})
+
+def run_ddpg_script():
+    subprocess.run(["python", "DDPG.py"], check=True)
+
 
 if __name__ == "__main__":
     app.run(debug=True)

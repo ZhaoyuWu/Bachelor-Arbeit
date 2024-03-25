@@ -59,7 +59,7 @@ BATCH_SIZE = 32  # update batchsize
 
 MAX_EPISODES = 100  # total number of episodes for training
 MAX_EP_STEPS = 50  # total number of steps for each episode
-TEST_PER_EPISODES = 10  # test the model per episodes
+TEST_PER_EPISODES = 5  # test the model per episodes
 VAR = 2  # control exploration
 
 
@@ -91,8 +91,8 @@ class DDPG(object):
             inputs = tl.layers.Input(input_state_shape, name='A_input')
             x = tl.layers.Dense(n_units=15, act=tf.nn.relu, W_init=W_init, b_init=b_init, name='A_l1')(inputs)
             x = tl.layers.Dense(n_units=a_dim, act=tf.nn.tanh, W_init=W_init, b_init=b_init, name='A_a')(x)
-            x = tl.layers.Lambda(lambda x: x * (0.2 - (-1)) / 2 + (0.2 + (-1)) / 2)(x)
-            x = tl.layers.Lambda(lambda x: tf.round(x * 10) / 10.0)(x)
+            x = tl.layers.Lambda(lambda x: x * (0.5 - (-1)) / (1 - (-1)) + (0.5 + (-1)) / 2)(x) # project action to [-1,0.5]
+            x = tl.layers.Lambda(lambda x: tf.round(x * 100) / 100.0)(x) # keep the action to two decimal places only
             return tl.models.Model(inputs=inputs, outputs=x, name='Actor' + name)
 
         # Critic network，input s，a。output Q(s,a)
@@ -274,15 +274,18 @@ class DDPG(object):
 
         increment = new_data[1:] - new_data[:-1]
 
+        # distance decrease when width decrease
         decrease_ratio = len(increment[(increment[:, 1] <= 0) & (increment[:, 0] <= 0)]) / len(increment[(increment[:, 0] <= 0)])
 
+        # distance decrease when width increase
         increase_ratio = len(increment[(increment[:, 1] <= 0) & (increment[:, 0] > 0)]) / len(increment[(increment[:, 0] > 0)])
 
+        # distance increase when width decrease
         jitter_ratio = len(increment[(increment[:, 1] > 0) & (increment[:, 0] <= 0)]) / len(increment[(increment[:, 0] <= 0)])
 
-        width_decrease_influence_prob = max(decrease_ratio - jitter_ratio,0.1)
+        width_decrease_influence_prob = max(decrease_ratio - jitter_ratio,0.01)
 
-        width_increase_influence_prob = max(increase_ratio - jitter_ratio, 0.1)
+        width_increase_influence_prob = max(increase_ratio - jitter_ratio, 0.01)
 
         decrease_width_increase_distance = increment[(increment[:, 1] <= 0) & (increment[:, 0] > 0)]
 
@@ -292,15 +295,16 @@ class DDPG(object):
 
         increase_width_decrease_distance = increment[(increment[:, 1] > 0) & (increment[:, 0] <= 0)]
 
-        jitter_factor = np.median(decrease_width_increase_distance[:, 0])
+        # 80% positions of decrease_width_increase_distance, describe the degree of user jitter
+        jitter_factor = np.percentile(decrease_width_increase_distance[:, 0], 80)
 
-        increase_factor_in = np.median(increase_width_increase_distance[:, 0]) * (1 - width_increase_influence_prob)
+        increase_factor_in = np.percentile(increase_width_increase_distance[:, 0], 80) #* (1 - width_increase_influence_prob)
 
-        increase_factor_out = np.median(increase_width_decrease_distance[:, 0]) * width_increase_influence_prob
+        increase_factor_out = np.percentile(increase_width_decrease_distance[:, 0], 80) #* width_increase_influence_prob
 
-        decrease_factor_in = np.median(decrease_width_decrease_distance[:, 0]) * width_decrease_influence_prob
+        decrease_factor_in = np.percentile(decrease_width_decrease_distance[:, 0], 80) #* width_decrease_influence_prob
 
-        decrease_factor_out = np.median(decrease_width_increase_distance[:, 0]) * (1 - width_decrease_influence_prob)
+        decrease_factor_out = np.percentile(decrease_width_increase_distance[:, 0], 80) #* (1 - width_decrease_influence_prob)
 
         print(width_decrease_influence_prob,
                            width_increase_influence_prob,
@@ -376,7 +380,7 @@ if __name__ == '__main__':
                 # Or any suitable decay factor
                 # print("DDGP Action",a)
                 a = np.clip(np.random.normal(a, VAR), -2, 2)
-                a = np.around(a, decimals=1)
+                a = np.around(a, decimals=2)
                 # print(env.step(a))
                 s_, r, done, info = env.step(a)
 
@@ -460,45 +464,45 @@ if __name__ == '__main__':
         print('\nRunning time: ', time.time() - t0)
         ddpg.save_ckpt()
     # plt.show(block=True)
-
-    env = PathEnvironment()
-    ddpg.load_ckpt()
-
-    plt.ion()  # interactive mode
-    fig, axs = plt.subplots(2, 1, figsize=(10, 10))
-
-    actions = []
-    widths = []
-    steps = []
-
-    s = env.reset()
-
-    for i in range(200):
-        action = ddpg.choose_action(s)
-        actions.append(action[0])
-        widths.append(env.avg_width)
-        steps.append(i)
-
-        s, r, done, info = env.step(action)
-
-        axs[0].clear()
-        axs[0].plot(steps, actions, label='Action')
-        axs[0].set_xlabel('Step')
-        axs[0].set_ylabel('Action')
-        axs[0].set_title('Action Changes')
-        axs[0].legend()
-
-        axs[1].clear()
-        axs[1].plot(steps, widths, label='Width', color='red')
-        axs[1].set_xlabel('Step')
-        axs[1].set_ylabel('Width')
-        axs[1].set_title('Width Changes')
-        axs[1].legend()
-
-        plt.pause(0.1)
-
-        if done:
-            break
-
-    plt.ioff()
-    plt.show()
+    #
+    # env = PathEnvironment()
+    # ddpg.load_ckpt()
+    #
+    # plt.ion()  # interactive mode
+    # fig, axs = plt.subplots(2, 1, figsize=(10, 10))
+    #
+    # actions = []
+    # widths = []
+    # steps = []
+    #
+    # s = env.reset()
+    #
+    # for i in range(200):
+    #     action = ddpg.choose_action(s)
+    #     actions.append(action[0])
+    #     widths.append(env.avg_width)
+    #     steps.append(i)
+    #
+    #     s, r, done, info = env.step(action)
+    #
+    #     axs[0].clear()
+    #     axs[0].plot(steps, actions, label='Action')
+    #     axs[0].set_xlabel('Step')
+    #     axs[0].set_ylabel('Action')
+    #     axs[0].set_title('Action Changes')
+    #     axs[0].legend()
+    #
+    #     axs[1].clear()
+    #     axs[1].plot(steps, widths, label='Width', color='red')
+    #     axs[1].set_xlabel('Step')
+    #     axs[1].set_ylabel('Width')
+    #     axs[1].set_title('Width Changes')
+    #     axs[1].legend()
+    #
+    #     plt.pause(0.1)
+    #
+    #     if done:
+    #         break
+    #
+    # plt.ioff()
+    # plt.show()
