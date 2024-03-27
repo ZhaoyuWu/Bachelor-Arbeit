@@ -230,27 +230,33 @@ class PathEnvironment(gym.Env):
         width = np.mean(state[-15:, 4])
         epsilon = 0.001
 
+        reward_width_adjustment = 0
+
         # Adjusted reward for width, considering the relation to DTW distance
         if width / 2 < (dtw_distance + 0.05) * 0.5:
             # Encourage increasing width if it's half is far less than DTW distance
             # Apply a penalty if width's half is significantly greater than the DTW distance
             penalty_factor = 0.5
             reward_width_adjustment = -np.log((width / 2) / (dtw_distance + epsilon)) * penalty_factor
+
         if width / 2 > (dtw_distance + 0.05) * 1.2:
             penalty_factor = 0.5
             reward_width_adjustment = np.log((width / 2) / (dtw_distance + epsilon)) * penalty_factor
-        else:
-            reward_width_adjustment = 0
+
+
 
         # Combine rewards
         reward_width = np.log((1 / (width + epsilon)) + 1)
 
-        if (width / 2 > (dtw_distance + 0.05) * 0.8):
-            w_width = 0.7
-            w_distance = 0.3
-        else:
-            w_width = 0.3
-            w_distance = 0.7
+        # if (width / 2 > (dtw_distance + 0.05) * 0.8):
+        #     w_width = 0.7
+        #     w_distance = 0.3
+        # else:
+        #     w_width = 0.3
+        #     w_distance = 0.7
+
+        w_width = 1
+        w_distance = 1
 
         total_reward = w_distance * reward_dtw_distance + w_width * reward_width - reward_width_adjustment
 

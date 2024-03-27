@@ -58,9 +58,9 @@ MEMORY_CAPACITY = 10000  # size of replay buffer
 BATCH_SIZE = 32  # update batchsize
 
 MAX_EPISODES = 100  # total number of episodes for training
-MAX_EP_STEPS = 50  # total number of steps for each episode
-TEST_PER_EPISODES = 5  # test the model per episodes
-VAR = 2  # control exploration
+MAX_EP_STEPS = 100  # total number of steps for each episode
+TEST_PER_EPISODES = 10  # test the model per episodes
+VAR = 1  # control exploration
 
 
 ###############################  DDPG  ####################################
@@ -283,7 +283,7 @@ class DDPG(object):
         # distance increase when width decrease
         jitter_ratio = len(increment[(increment[:, 1] > 0) & (increment[:, 0] <= 0)]) / len(increment[(increment[:, 0] <= 0)])
 
-        width_decrease_influence_prob = max(decrease_ratio - jitter_ratio,0.01)
+        width_decrease_influence_prob = max(decrease_ratio ,0.01)
 
         width_increase_influence_prob = max(increase_ratio - jitter_ratio, 0.01)
 
@@ -296,15 +296,15 @@ class DDPG(object):
         increase_width_decrease_distance = increment[(increment[:, 1] > 0) & (increment[:, 0] <= 0)]
 
         # 80% positions of decrease_width_increase_distance, describe the degree of user jitter
-        jitter_factor = np.percentile(decrease_width_increase_distance[:, 0], 80)
+        jitter_factor = np.percentile(decrease_width_increase_distance[:, 0], 80) * jitter_ratio
 
-        increase_factor_in = np.percentile(increase_width_increase_distance[:, 0], 80) #* (1 - width_increase_influence_prob)
+        increase_factor_in = np.percentile(increase_width_increase_distance[:, 0], 80) * (1 - width_increase_influence_prob)
 
-        increase_factor_out = np.percentile(increase_width_decrease_distance[:, 0], 80) #* width_increase_influence_prob
+        increase_factor_out = np.percentile(increase_width_decrease_distance[:, 0], 80) * width_increase_influence_prob
 
-        decrease_factor_in = np.percentile(decrease_width_decrease_distance[:, 0], 80) #* width_decrease_influence_prob
+        decrease_factor_in = np.percentile(decrease_width_decrease_distance[:, 0], 80) * width_decrease_influence_prob
 
-        decrease_factor_out = np.percentile(decrease_width_increase_distance[:, 0], 80) #* (1 - width_decrease_influence_prob)
+        decrease_factor_out = np.percentile(decrease_width_increase_distance[:, 0], 80) * (1 - width_decrease_influence_prob)
 
         print(width_decrease_influence_prob,
                            width_increase_influence_prob,
@@ -356,7 +356,7 @@ if __name__ == '__main__':
         reward_buffer = []  # reward each Episode
         t0 = time.time()  # time
 
-        # 初始化图像显示
+        # initialize graphic
         # plt.ion()
         # fig, axs = plt.subplots(3, 1, figsize=(10, 12))
 
@@ -397,9 +397,9 @@ if __name__ == '__main__':
                 if ddpg.pointer > MEMORY_CAPACITY:
                     ddpg.learn()
 
-                stroke_points = s_[:, :2]
-                path_centers = s_[:, 2:4]
-
+                # stroke_points = s_[:, :2]
+                # path_centers = s_[:, 2:4]
+                #
                 # axs[0].plot(stroke_points[:, 0], stroke_points[:, 1],'r-')
                 # axs[0].plot(path_centers[:, 0], path_centers[:, 1],'b-')
                 #
@@ -418,8 +418,8 @@ if __name__ == '__main__':
                         ), end=''
                     )
 
-                plt.show()
-
+            #     plt.show()
+            #
             # if(i%MAX_EP_STEPS != 0):
             #     reward_history.append(ep_reward)
 
@@ -468,22 +468,24 @@ if __name__ == '__main__':
     # env = PathEnvironment()
     # ddpg.load_ckpt()
     #
-    # plt.ion()  # interactive mode
-    # fig, axs = plt.subplots(2, 1, figsize=(10, 10))
+    # plt.ion()  # 开启交互模式
+    # fig, axs = plt.subplots(3, 1, figsize=(10, 15))
     #
     # actions = []
     # widths = []
+    # rewards = []
     # steps = []
     #
     # s = env.reset()
     #
-    # for i in range(200):
+    # for i in range(100):
     #     action = ddpg.choose_action(s)
-    #     actions.append(action[0])
+    #     actions.append(-1)#action[0])
     #     widths.append(env.avg_width)
     #     steps.append(i)
     #
     #     s, r, done, info = env.step(action)
+    #     rewards.append(r)
     #
     #     axs[0].clear()
     #     axs[0].plot(steps, actions, label='Action')
@@ -498,6 +500,13 @@ if __name__ == '__main__':
     #     axs[1].set_ylabel('Width')
     #     axs[1].set_title('Width Changes')
     #     axs[1].legend()
+    #
+    #     axs[2].clear()
+    #     axs[2].plot(steps, rewards, label='Reward', color='green')
+    #     axs[2].set_xlabel('Step')
+    #     axs[2].set_ylabel('Reward')
+    #     axs[2].set_title('Reward Changes')
+    #     axs[2].legend()
     #
     #     plt.pause(0.1)
     #

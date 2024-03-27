@@ -29,7 +29,7 @@ def apply_model_to_processed_data(processed_data):
 
     adjusted_data_cm = []
 
-    step_size = 10  # Apply DDPG every 10 steps
+    step_size = 5  # Apply DDPG every 10 steps
     window_size = 3  # Size of the window to create a state
     batch_size = 50
 
