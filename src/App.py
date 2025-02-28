@@ -11,17 +11,16 @@ CORS(app)
 
 global_path_data = None
 
-# 创建数据库连接和游标
 conn = sqlite3.connect('processed_data.db', check_same_thread=False)
 cursor = conn.cursor()
 
-# 创建数据表
 cursor.execute('''CREATE TABLE IF NOT EXISTS processed_data (
                     id INTEGER PRIMARY KEY,
                     data TEXT
                 )''')
 conn.commit()
 
+# Get path from backend
 @app.route('/generate-path', methods=['GET'])
 def generate_path():
     global global_path_data
@@ -31,6 +30,7 @@ def generate_path():
     global_path_data = path_data_list
     return jsonify(path_data_list)
 
+# Process data
 @app.route('/submit-path', methods=['POST'])
 def submit_path():
     global global_path_data
@@ -39,6 +39,10 @@ def submit_path():
         # preprocessing
         processed_data = preprocess_data(frontend_data, global_path_data)
 
+
+        #==================================================================================================
+        #The following code controls whether frontend data is saved in the database.
+        # ==================================================================================================
         # cursor.execute("INSERT INTO processed_data (data) VALUES (?)", (str(processed_data),))
         # conn.commit()
         #
@@ -54,6 +58,8 @@ def submit_path():
         #
         # if max_id is not None and max_id % 10 == 0:
         #     run_ddpg_script()
+        # ==================================================================================================
+
 
         # apply DDPG to processed data
         global_path_data = apply_model_to_processed_data(processed_data)
@@ -61,6 +67,7 @@ def submit_path():
     else:
         return jsonify({"status": "error", "message": "Backend path data not available"})
 
+# Get data from frontend.
 @app.route('/get-processed-path', methods=['GET'])
 def get_processed_path():
     global global_path_data

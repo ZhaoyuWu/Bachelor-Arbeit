@@ -23,15 +23,17 @@ Step 4. Convert result units to pixel
 
 def apply_model_to_processed_data(processed_data):
 
-    # print(processed_data)
     # input to cm
     processed_data_cm = pixels_to_cm(np.array(processed_data), PIXELS_PER_CM)
 
     adjusted_data_cm = []
 
-    step_size = 5  # Apply DDPG every 10 steps
+    step_size = 5  # Apply DDPG every 5 steps
     window_size = 3  # Size of the window to create a state
-    batch_size = 50
+    batch_size = 10
+
+    Actions = 0
+    counter = 0
 
     ddpg_model.load_ckpt()
 
@@ -53,12 +55,13 @@ def apply_model_to_processed_data(processed_data):
             indices = [i, i + 1, i + 2]
             window_data = batch_data[indices]
 
+            distances = []
+            dist_change = 0
+            actions = []
             state = window_data.flatten()
 
             # 'state' should be exactly of length 15 (3 points * 5 dimensions each)
             action = ddpg_model.choose_action(state.reshape(1, -1))
-
-            # action = np.clip(np.random.normal(action, VAR), -1, 1)
 
             action *= 1 # Scaling factor
 
@@ -70,12 +73,19 @@ def apply_model_to_processed_data(processed_data):
                 adjusted_point_cm = [
                     batch_data[j][2] + path_x_offset,  # x
                     batch_data[j][3] + path_y_offset,  # y
-                    min(max((batch_data[j][4] + action[0]),0.2),2) # width + action is limited between 0.5 and 2
+                    min(max((batch_data[j][4] + action[0]),0.2),2) # width + action is limited between 0.2 and 2
                 ]
+
+                distance = np.linalg.norm(window_data[:, :2] - window_data[:, 2:4], axis=1)
+
+                distances.append(distance)
+                actions.append(action[0])
+
                 if(j==i):
-                    # print(processed_data_cm[j][0],processed_data_cm[j][1],processed_data_cm[j][2],processed_data_cm[j][3],processed_data_cm[j][4])
-                    # print(processed_data_cm[j][4] + action[0])
-                    print(action[0])
+                    #print("Action: ",np.mean(actions)," Distance: ",np.var(distances))
+                    Actions += np.mean(actions)
+                    counter += 1
+                    #print("counter=",counter,Actions/counter)
                 adjusted_data_cm.append(adjusted_point_cm)
 
 

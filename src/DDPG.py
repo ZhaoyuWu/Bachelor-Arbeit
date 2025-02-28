@@ -1,31 +1,3 @@
-"""
-Deep Deterministic Policy Gradient (DDPG)
------------------------------------------
-An algorithm concurrently learns a Q-function and a policy.
-It uses off-policy data and the Bellman equation to learn the Q-function,
-and uses the Q-function to learn the policy.
-
-Reference
----------
-Deterministic Policy Gradient Algorithms, Silver et al. 2014
-Continuous Control With Deep Reinforcement Learning, Lillicrap et al. 2016
-MorvanZhou's tutorial page: https://morvanzhou.github.io/tutorials/
-
-Environment
------------
-Openai Gym Pendulum-v0, continual action space
-
-Prerequisites
--------------
-tensorflow >=2.0.0a0
-tensorflow-probability 0.6.0
-tensorlayer >=2.0.0
-
-To run
-------
-python tutorial_DDPG.py --train/test
-
-"""
 
 import argparse
 import os
@@ -40,30 +12,28 @@ from ENV import PathEnvironment
 
 import tensorlayer as tl
 
+
 parser = argparse.ArgumentParser(description='Train or test neural net motor controller.')
 parser.add_argument('--train', dest='train', action='store_true', default=True)
 parser.add_argument('--test', dest='test', action='store_false')
 args = parser.parse_args()
 
-#####################  hyper parameters  ####################
+#  hyper parameters  ======================================================
 
-ENV_NAME = 'Pendulum-v1'  # environment name
-RANDOMSEED = 1  # random seed
-
-LR_A = 0.001  # learning rate for actor
-LR_C = 0.002  # learning rate for critic
+LR_A =  0.0001 # learning rate for actor
+LR_C =  0.0005  # learning rate for critic
 GAMMA = 0.9  # reward discount
-TAU = 0.01  # soft replacement
-MEMORY_CAPACITY = 10000  # size of replay buffer
-BATCH_SIZE = 32  # update batchsize
+TAU = 0.1  # soft replacement
+MEMORY_CAPACITY = 5000  # size of replay buffer
+BATCH_SIZE = 30 # update batchsize
 
-MAX_EPISODES = 100  # total number of episodes for training
-MAX_EP_STEPS = 100  # total number of steps for each episode
+MAX_EPISODES = 70  # total number of episodes for training
+MAX_EP_STEPS = 50  # total number of steps for each episode
 TEST_PER_EPISODES = 10  # test the model per episodes
-VAR = 1  # control exploration
+VAR = 0.5  # control exploration
 
 
-###############################  DDPG  ####################################
+#  DDPG  ==================================================================
 
 class DDPG(object):
     """
@@ -76,6 +46,8 @@ class DDPG(object):
         self.memory = np.zeros((MEMORY_CAPACITY, s_dim * 2 + a_dim + 1), dtype=np.float32)
         self.pointer = 0
         self.a_dim, self.s_dim, self.a_bound = a_dim, s_dim, a_bound
+
+        self.loss_history = []
 
         W_init = tf.random_normal_initializer(mean=0, stddev=0.3)
         b_init = tf.constant_initializer(0.1)
@@ -92,7 +64,7 @@ class DDPG(object):
             x = tl.layers.Dense(n_units=15, act=tf.nn.relu, W_init=W_init, b_init=b_init, name='A_l1')(inputs)
             x = tl.layers.Dense(n_units=a_dim, act=tf.nn.tanh, W_init=W_init, b_init=b_init, name='A_a')(x)
             x = tl.layers.Lambda(lambda x: x * (0.5 - (-1)) / (1 - (-1)) + (0.5 + (-1)) / 2)(x) # project action to [-1,0.5]
-            x = tl.layers.Lambda(lambda x: tf.round(x * 100) / 100.0)(x) # keep the action to two decimal places only
+            #x = tl.layers.Lambda(lambda x: tf.round(x * 100) / 100.0)(x) # keep the action to two decimal places only
             return tl.models.Model(inputs=inputs, outputs=x, name='Actor' + name)
 
         # Critic network，input s，a。output Q(s,a)
@@ -109,10 +81,10 @@ class DDPG(object):
             x = tl.layers.Concat(1)([s, a])
             x = tl.layers.Dense(n_units=30, act=tf.nn.relu, W_init=W_init, b_init=b_init, name='C_l1')(x)
             x = tl.layers.Dense(n_units=1, W_init=W_init, b_init=b_init, name='C_out')(x)
-            # print("Q: ",x)
             return tl.models.Model(inputs=[s, a], outputs=x, name='Critic' + name)
 
         self.actor = get_actor([None, s_dim])
+        print(self.actor)
         self.critic = get_critic([None, s_dim], [None, a_dim])
         self.actor.train()
         self.critic.train()
@@ -150,6 +122,7 @@ class DDPG(object):
         ExponentialMovingAverage update
         """
         paras = self.actor.trainable_weights + self.critic.trainable_weights
+        #("weights",self.actor.trainable_weights)
         self.ema.apply(paras)
         for i, j in zip(self.actor_target.trainable_weights + self.critic_target.trainable_weights, paras):
             i.assign(self.ema.average(j))
@@ -186,7 +159,6 @@ class DDPG(object):
             q_ = self.critic_target([bs_, a_])
             y = br + GAMMA * q_
             q = self.critic([bs, ba])
-            # print("Q: ",q)
             td_error = tf.losses.mean_squared_error(y, q)
         c_grads = tape.gradient(td_error, self.critic.trainable_weights)
         self.critic_opt.apply_gradients(zip(c_grads, self.critic.trainable_weights))
@@ -200,9 +172,10 @@ class DDPG(object):
         a_grads = tape.gradient(a_loss, self.actor.trainable_weights)
         self.actor_opt.apply_gradients(zip(a_grads, self.actor.trainable_weights))
 
+        self.loss_history.append((td_error, a_loss))
+        #print("LOSS:",td_error, " ",a_loss)
         self.ema_update()
 
-    # 保存s，a，r，s_
     def store_transition(self, s, a, r, s_):
         """
         Store data in data buffer
@@ -213,8 +186,6 @@ class DDPG(object):
         :return: None
         """
 
-        # s = s.astype(np.float32)
-        # s_ = s_.astype(np.float32)
         s = s.flatten()
         s_ = s_.flatten()
         transition = np.hstack((s, a, [r], s_))
@@ -235,20 +206,20 @@ class DDPG(object):
         if not os.path.exists('model'):
             os.makedirs('model')
 
-        tl.files.save_weights_to_hdf5('model/ddpg_actor.hdf5', self.actor)
-        tl.files.save_weights_to_hdf5('model/ddpg_actor_target.hdf5', self.actor_target)
-        tl.files.save_weights_to_hdf5('model/ddpg_critic.hdf5', self.critic)
-        tl.files.save_weights_to_hdf5('model/ddpg_critic_target.hdf5', self.critic_target)
+        tl.files.save_weights_to_hdf5(f'model/ddpg_actor_{LR_A}_{LR_C}.hdf5', self.actor)
+        tl.files.save_weights_to_hdf5(f'model/ddpg_actor_target_{LR_A}_{LR_C}.hdf5', self.actor_target)
+        tl.files.save_weights_to_hdf5(f'model/ddpg_critic_{LR_A}_{LR_C}.hdf5', self.critic)
+        tl.files.save_weights_to_hdf5(f'model/ddpg_critic_target_{LR_A}_{LR_C}.hdf5', self.critic_target)
 
     def load_ckpt(self):
         """
         load trained weights
         :return: None
         """
-        tl.files.load_hdf5_to_weights_in_order('model/ddpg_actor.hdf5', self.actor)
-        tl.files.load_hdf5_to_weights_in_order('model/ddpg_actor_target.hdf5', self.actor_target)
-        tl.files.load_hdf5_to_weights_in_order('model/ddpg_critic.hdf5', self.critic)
-        tl.files.load_hdf5_to_weights_in_order('model/ddpg_critic_target.hdf5', self.critic_target)
+        tl.files.load_hdf5_to_weights_in_order(f'model/ddpg_actor_{LR_A}_{LR_C}.hdf5', self.actor)
+        tl.files.load_hdf5_to_weights_in_order(f'model/ddpg_actor_target_{LR_A}_{LR_C}.hdf5', self.actor_target)
+        tl.files.load_hdf5_to_weights_in_order(f'model/ddpg_critic_{LR_A}_{LR_C}.hdf5', self.critic)
+        tl.files.load_hdf5_to_weights_in_order(f'model/ddpg_critic_target_{LR_A}_{LR_C}.hdf5', self.critic_target)
 
     def get_latest_data(self):
         """
@@ -261,6 +232,9 @@ class DDPG(object):
         cursor.execute("SELECT data FROM processed_data ORDER BY id DESC LIMIT 10")
         latest_data = cursor.fetchall()
 
+        if not latest_data:
+            return
+
         concatenated_data = np.concatenate([eval(data[0]) for data in latest_data])
 
         points = concatenated_data[:, :4]
@@ -269,7 +243,6 @@ class DDPG(object):
         pen_to_center_distance = np.linalg.norm(points[:, :2] - points[:, 2:4], axis=1)
 
         new_data = np.column_stack((pen_to_center_distance, width))
-
         conn.close()
 
         increment = new_data[1:] - new_data[:-1]
@@ -298,13 +271,13 @@ class DDPG(object):
         # 80% positions of decrease_width_increase_distance, describe the degree of user jitter
         jitter_factor = np.percentile(decrease_width_increase_distance[:, 0], 80) * jitter_ratio
 
-        increase_factor_in = np.percentile(increase_width_increase_distance[:, 0], 80) * (1 - width_increase_influence_prob)
+        increase_factor_in = np.percentile(increase_width_increase_distance[:, 0], 80) # * (1 - width_increase_influence_prob)
 
-        increase_factor_out = np.percentile(increase_width_decrease_distance[:, 0], 80) * width_increase_influence_prob
+        increase_factor_out = np.percentile(increase_width_decrease_distance[:, 0], 80) # * width_increase_influence_prob
 
-        decrease_factor_in = np.percentile(decrease_width_decrease_distance[:, 0], 80) * width_decrease_influence_prob
+        decrease_factor_in = np.percentile(decrease_width_decrease_distance[:, 0], 80) # * width_decrease_influence_prob
 
-        decrease_factor_out = np.percentile(decrease_width_increase_distance[:, 0], 80) * (1 - width_decrease_influence_prob)
+        decrease_factor_out = np.percentile(decrease_width_increase_distance[:, 0], 80) # * (1 - width_decrease_influence_prob)
 
         print(width_decrease_influence_prob,
                            width_increase_influence_prob,
@@ -326,14 +299,8 @@ class DDPG(object):
 
 if __name__ == '__main__':
 
-    # env = gym.make(ENV_NAME)
     env = PathEnvironment()
     env = env.unwrapped
-
-    # reproducible
-    # env.seed(RANDOMSEED)
-    np.random.seed(RANDOMSEED)
-    tf.random.set_seed(RANDOMSEED)
 
     # Define state space, action space, range of action magnitude
     # s_dim = env.observation_space.shape[0]
@@ -341,9 +308,6 @@ if __name__ == '__main__':
     s_dim = np.prod(state_shape)
     a_dim = env.action_space.shape[0]
     a_bound = env.action_space.high
-
-    print('s_dim', s_dim)
-    print('a_dim', a_dim)
 
     # ddpg
     ddpg = DDPG(a_dim, s_dim, a_bound)
@@ -353,7 +317,6 @@ if __name__ == '__main__':
     # train：
     if args.train:  # train
 
-        reward_buffer = []  # reward each Episode
         t0 = time.time()  # time
 
         # initialize graphic
@@ -363,6 +326,31 @@ if __name__ == '__main__':
         reward_history = []
         width_history = []
 
+        conn = sqlite3.connect('processed_data.db')
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT data FROM processed_data ORDER BY id DESC LIMIT 10")
+        latest_data = cursor.fetchall()
+
+        new_data = np.concatenate([eval(data[0]) for data in latest_data])
+        print(len(new_data))
+        conn.close()
+
+        index = 0
+
+        block_size = 3
+
+        while index + block_size * 2 <= len(new_data):
+            s = new_data[index:index + block_size]
+            s_ = new_data[index + block_size:index + block_size * 2]
+
+            a = s_[0, 4] - s[-1, 4]
+
+            r = env.calculate_reward(s_)
+
+            ddpg.store_transition(s, a, r / 10, s_)
+
+            index += block_size
 
         for i in range(MAX_EPISODES):
             t1 = time.time()
@@ -372,29 +360,24 @@ if __name__ == '__main__':
             for j in range(MAX_EP_STEPS):
                 # Add exploration noise
                 a = ddpg.choose_action(s)
-                # print("DDPG Action: ", a)
                 # To be able to keep the development going, here's another way to add exploration.
                 # So need to need to create a normal distribution with a as the mean and VAR as the standard deviation, and then sample a from the normal distribution
                 # Because a is the mean, the probability of a is maximized. But how big a is relative to the other probabilities by is adjusted by the VAR. Here we can actually add update the VAR to dynamically adjust the certainty of a
                 # And then do the trimming
                 # Or any suitable decay factor
-                # print("DDGP Action",a)
                 a = np.clip(np.random.normal(a, VAR), -2, 2)
                 a = np.around(a, decimals=2)
-                # print(env.step(a))
                 s_, r, done, info = env.step(a)
-
-                # print("state: ",s, "\naction: ",a,"\nrewards: ",r,"\nlast state: ",s_)
-                # print("Action: ",a, "Reward: ", r)
                 ddpg.store_transition(s, a, r / 10, s_)
 
                 N = min(15, s.shape[0])
 
                 width_history.append(np.mean(s[-N:, 4]))
-                # print("Width: ",np.mean(s[-N:, 4]))
 
                 # data full, start learning
-                if ddpg.pointer > MEMORY_CAPACITY:
+                if ddpg.pointer > MEMORY_CAPACITY-len(new_data):
+                    if ddpg.pointer == MEMORY_CAPACITY - len(new_data)+1:
+                        print("\nDDPG starts to learn.")
                     ddpg.learn()
 
                 # stroke_points = s_[:, :2]
@@ -417,6 +400,11 @@ if __name__ == '__main__':
                             time.time() - t1
                         ), end=''
                     )
+            if i == MAX_EPISODES - 1:
+                with open(f'loss_history_{LR_A}_{LR_C}.txt', 'w') as f:
+                    for td_error, a_loss in ddpg.loss_history:
+                        f.write(f"Critic Loss: {td_error}, Actor Loss: {a_loss}\n")
+
 
             #     plt.show()
             #
@@ -434,8 +422,8 @@ if __name__ == '__main__':
             # axs[2].set_xlabel('Step')
             # axs[2].set_ylabel('Width')
             # axs[2].legend()
-            #
-            # plt.pause(0.01)
+
+            plt.pause(0.01)
 
             # test
             if i and not i % TEST_PER_EPISODES:
@@ -449,7 +437,7 @@ if __name__ == '__main__':
 
                     s = s_
                     ep_reward += r
-                    if j == MAX_EP_STEPS - 1:
+                    if j == MAX_EP_STEPS-1:
                         print(
                             '\rEpisode: {}/{}  | Episode Reward: {:.4f}  | Running Time: {:.4f}'.format(
                                 i, MAX_EPISODES, ep_reward,
@@ -457,61 +445,8 @@ if __name__ == '__main__':
                             )
                         )
 
-                        reward_buffer.append(ep_reward)
 
-            # print("EPR: ",reward_buffer)
 
         print('\nRunning time: ', time.time() - t0)
         ddpg.save_ckpt()
-    # plt.show(block=True)
-    #
-    # env = PathEnvironment()
-    # ddpg.load_ckpt()
-    #
-    # plt.ion()  # 开启交互模式
-    # fig, axs = plt.subplots(3, 1, figsize=(10, 15))
-    #
-    # actions = []
-    # widths = []
-    # rewards = []
-    # steps = []
-    #
-    # s = env.reset()
-    #
-    # for i in range(100):
-    #     action = ddpg.choose_action(s)
-    #     actions.append(-1)#action[0])
-    #     widths.append(env.avg_width)
-    #     steps.append(i)
-    #
-    #     s, r, done, info = env.step(action)
-    #     rewards.append(r)
-    #
-    #     axs[0].clear()
-    #     axs[0].plot(steps, actions, label='Action')
-    #     axs[0].set_xlabel('Step')
-    #     axs[0].set_ylabel('Action')
-    #     axs[0].set_title('Action Changes')
-    #     axs[0].legend()
-    #
-    #     axs[1].clear()
-    #     axs[1].plot(steps, widths, label='Width', color='red')
-    #     axs[1].set_xlabel('Step')
-    #     axs[1].set_ylabel('Width')
-    #     axs[1].set_title('Width Changes')
-    #     axs[1].legend()
-    #
-    #     axs[2].clear()
-    #     axs[2].plot(steps, rewards, label='Reward', color='green')
-    #     axs[2].set_xlabel('Step')
-    #     axs[2].set_ylabel('Reward')
-    #     axs[2].set_title('Reward Changes')
-    #     axs[2].legend()
-    #
-    #     plt.pause(0.1)
-    #
-    #     if done:
-    #         break
-    #
-    # plt.ioff()
-    # plt.show()
+
