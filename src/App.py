@@ -7,7 +7,7 @@ import sqlite3
 import subprocess
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "http://localhost:3000"}})
 
 global_path_data = None
 
@@ -82,5 +82,6 @@ def run_ddpg_script():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5000, debug=True)
+
 

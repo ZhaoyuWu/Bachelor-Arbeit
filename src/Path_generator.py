@@ -12,7 +12,7 @@ class RandomPathGenerator:
         self.prev_path_width = 1.5
         self.path = np.zeros((num_steps, 3))  # [x, y, width]
         self.width_change = 0
-        self.figure = 0          # Controls the generated graph types: 0 for random paths, 1 for polygons, and 2 for arcs.
+        self.figure = 2          # Controls the generated graph types: 0 for random paths, 1 for polygons, and 2 for arcs.
 
     def generate_path(self):
         if self.figure == 0:
